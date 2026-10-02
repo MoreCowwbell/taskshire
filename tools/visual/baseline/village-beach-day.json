@@ -1,0 +1,12 @@
+{
+  "drawCalls": 127,
+  "triangles": 835619,
+  "agents": 7,
+  "visible": 7,
+  "settled": 7,
+  "onSite": 6,
+  "penetrations": 0,
+  "buildings": 12,
+  "plots": 3,
+  "particles": 11
+}

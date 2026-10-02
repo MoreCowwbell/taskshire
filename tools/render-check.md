@@ -21,7 +21,7 @@ The browser check needs real WebGL2. It covers:
 `npm test` also checks resize scheduling, preserving adaptive resolution on focus/window
 resize, restoring the requested resolution, and sizing a newly enabled composer.
 
-## Black-block regression in PR #53
+## Black-block regression in PR Station-Sciences/bot-crossing#53
 
 Grass used `pow(vHeight, 1.2)`. At grazing angles, interpolation can put a root's height
 slightly below zero. The resulting NaN starts in the scene render, then spreads through

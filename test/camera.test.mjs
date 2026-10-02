@@ -109,7 +109,7 @@ test('follow preference defaults on, persists, and does not rebuild rendering or
   try {
     const settings = new Settings()
     assert.equal(settings.get('followSelected'), true)
-    settings.onChange((_, scope) => assert.deepEqual(scope, { world: false, render: false }))
+    settings.onChange((_, scope) => assert.deepEqual(scope, { world: false, render: false, roster: false }))
     settings.set('followSelected', false)
     assert.equal(settings.get('preset'), 'balanced')
     stored = JSON.stringify(settings.values)

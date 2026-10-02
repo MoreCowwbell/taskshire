@@ -2,10 +2,12 @@ import * as THREE from 'three'
 import { Engine } from '../src/core/engine.js'
 import { Settings, PRESETS } from '../src/core/settings.js'
 import { Sky } from '../src/world/sky.js'
-import { PLANETS } from '../src/world/planet.js'
+import { manifest as SPACE } from '../src/themes/space/manifest.js'
+// The worlds live in the space theme's manifest since the 2026-09-24 merge; keyed by id here.
+const PLANETS = Object.fromEntries(SPACE.settings.map((s) => [s.id, s]))
 import { Astronauts } from '../src/agents/astronauts.js'
 import { loadCrew, crewRig, frameFor } from '../src/agents/crew.js'
-import { FACE } from '../src/agents/faces.js'
+import { FACE } from '../src/themes/space/faces.js'
 import { installWorldCurve, setCurveView } from '../src/core/curve.js'
 
 // Contact sheet from the production geometry/shaders, not a separate concept model.
@@ -47,7 +49,7 @@ try {
   const engine = new Engine(settings).mount(document.querySelector('#render'))
   engine.renderer.setClearColor(0x070d16)
   const sky = new Sky(engine.scene, settings, engine.renderer)
-  sky.setPlanet(PLANETS.ocean); sky.setTime(0.34)
+  sky.setSetting(PLANETS.ocean); sky.setTime(0.34)
   engine.camera.position.set(0, 1.02, 1.8)
   engine.camera.lookAt(0, 0.94, 0); engine.camera.updateMatrixWorld()
   sky.update(0, 0, engine.camera)

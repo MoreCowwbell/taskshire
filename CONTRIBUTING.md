@@ -1,101 +1,39 @@
-# Contributing
+# Contributing to Taskshire
 
-Thanks for looking. Please read the next section before you spend time on anything.
+Thanks for looking. Taskshire is a fork of [Bot Crossing](https://github.com/Station-Sciences/bot-crossing),
+kept by one person in spare time, so this page starts with what to expect.
 
-## What you can expect from me
+## What you can expect
 
-I want to be straight about this rather than let you find out from an unanswered PR.
+**Best effort.** Issues and pull requests are welcome, and they are read when time allows. There
+is no promised response time, and some may go unanswered for a while. Forking is always a
+reasonable thing to do; this project is itself a fork.
 
-**This is published as-is, and I cannot promise to maintain it.** I built it for myself and
-put it out because it seemed worth sharing. I do not have the time to offer real support, and
-I would rather say so up front than imply a level of attention I cannot deliver.
+- **Issues:** read. A clear report with the platform it happened on is the most useful thing
+  you can send.
+- **Pull requests:** welcome, one thing at a time. A small PR with evidence is far likelier to
+  land than a large one.
+- **Feature requests:** fine to open. Whether they get built depends on time and fit.
 
-Concretely:
+## Where a change belongs
 
-- **Issues** — I read them. I may not act on them, and I may not reply.
-- **Pull requests** — genuinely welcome, and please read the next section on how they get
-  used, because it is not the usual thing.
-- **Response times** — no promises. Days, weeks, or never, depending on what else is going on.
-- **Feature requests** — probably not, unless they happen to be something I want too.
+- **The medieval theme, the HUD and the workflow** (thread states, recap, Resume, the repo
+  list): here.
+- **A bug in the space theme or in shared code you can reproduce on upstream's own `main`:**
+  upstream, at [Station-Sciences/bot-crossing](https://github.com/Station-Sciences/bot-crossing). A fix
+  that lands there reaches this fork at the next merge, and reaches everyone who runs the
+  original too. His [CONTRIBUTING](https://github.com/Station-Sciences/bot-crossing/blob/main/CONTRIBUTING.md)
+  explains how he takes pull requests.
+- **Verification on a machine that isn't Windows.** This fork is developed on Windows. Reports
+  and fixes from macOS and Linux, saying what you ran and what you saw, are especially welcome.
 
-## How pull requests actually get used
+## Two rules that don't bend
 
-**A PR here is read as a feature request with a working reference implementation.** That is a
-good thing to send and the most useful kind of issue you can open. It is also, usually, not the
-branch that gets merged.
-
-What happens instead: I batch the open PRs, test them on my own machine, and land the intent of
-them together in one branch. Your name goes on the commit. Then your PR gets closed with a link
-to where it shipped.
-
-Three reasons it works this way rather than merge-by-merge:
-
-- **PRs circling the same seam disagree with each other.** Five separate PRs once widened the
-  same "open a thread" interface five incompatible ways. Merged in arrival order that leaves the
-  codebase with five answers to one question; picking one shape and applying it consistently
-  leaves it with one.
-- **I have to test it on my machine before it goes in**, and often that turns up something the
-  branch could not have known about — a path that is wrong on a real install, a scan cost that
-  only shows at volume.
-- **Batching is faster than negotiating each branch to a common shape.** It keeps the project
-  moving instead of leaving good work sitting in a queue going stale.
-
-**So: your PR may well be closed unmerged and still be the reason something shipped.** That is a
-worse deal for you than having your commit merged, and it is written down here so nobody has to
-work it out from a closed tab. If that is not what you want from contributing, that is entirely
-fair — say so in the PR and I will tell you plainly whether I am likely to merge it as-is.
-
-**What makes a PR most useful under this model:** a small, focused change; a clear description of
-the problem it fixes; and what you verified and on what machine. The last one matters more than
-the diff. I cannot test Windows, and I cannot test Linux, and I cannot test a harness I do not
-have installed — so a PR that says "ran it against 40 real Codex sessions on Fedora, here is what
-happened" is worth more to me than a clean patch I have to take on faith.
-
-**And there is a review agent.** I use one for the first pass and read its summary before
-deciding anything. You deserve to know how your work is being evaluated. A human — me — makes
-the call.
-
-**Forking is a first-class option here, not a consolation prize.** It is MIT. If you want to
-take this somewhere I am not going, or you need it maintained on a schedule I cannot offer,
-fork it and go — you do not need my permission or my blessing, and I would rather see a
-healthy fork than a PR of yours going stale in my queue. If you build something good on top
-of it, I would love to hear about it, but you owe me nothing.
-
-If that arrangement does not work for you, no hard feelings — that is exactly why it is
-written down here.
-
-## What is most worth contributing
-
-**Harness adapters, by a wide margin.** Bot Crossing reads Claude Code and Codex. The whole
-point of the seam in `server/harnesses/` is that adding OpenCode, Antigravity, Amp, Cursor or
-anything else should be one new file and one line in a registry.
-
-Everything you need is in **[`server/harnesses/README.md`](server/harnesses/README.md)** — the
-interface, the thread shape, the ground rules, and how to find where a given harness keeps its
-sessions on disk.
-
-The decisions that are already settled — and why — are in **[DECISIONS.md](DECISIONS.md)**.
-Worth a skim before you start; it will save you writing something I have to say no to.
-
-Two hard rules, and I will not bend on either — both are there because breaking them has
-already cost somebody's machine something:
-
-- **Nothing is ever written to a harness.** Not a transcript, not a session record, not one
-  flag. `data/colony.json` is the only file this project writes.
-- **Nothing is ever read from or executed inside another application's bundle.** Only files
-  under the user's own home directory. Opening a thread goes through a URL the OS resolves, or
-  a command the user already has on `PATH`.
-
-Beyond those, if the interface does not fit your harness, that is a bug in the seam and not in
-your work — say so in the PR and change what you need to. I would much rather widen the
-interface than have you contort an adapter around it.
-
-Also useful:
-
-- **Bug fixes**, especially anything where the colony misrepresents what a thread is actually
-  doing. That is the one thing the project has to get right.
-- **Performance**, if you can measure it. See the Performance section of the README for the kind
-  of numbers the existing work is held to.
+- **Read-only towards every harness.** Taskshire reads each harness's own session files and
+  never writes to them, and a change that writes to a harness will not be merged.
+- **One file written, and it stays local.** `data/colony.json` is the only file the app writes.
+  The server binds to `127.0.0.1` and answers only its own page. See "Keeping it local" in the
+  README.
 
 ## Working on it
 
@@ -103,42 +41,43 @@ Also useful:
 npm install && npm run dev
 ```
 
-That is the whole loop — the API runs inside the Vite dev server, so there is no second process.
-You need a real harness installed with real threads for anything interesting to appear.
+That is the whole loop: the API runs inside the Vite dev server. `npm start` builds and serves
+the production page instead.
 
-`npm run assets` re-packs the source art into the `.glb` files. It is a no-op on a fresh clone,
-because the built files are checked in and the raw packs are not. You only need it if you are
-changing the art pipeline, and the README explains where to re-download the packs.
+Three gates, in this order, and all three should be green before you open a PR:
 
-`npm test` runs the suite — the colony file's merge and migration, and the harness contract
-against fixtures. It is not exhaustive and there is no linter. New tests are welcome but not
-demanded; keeping the existing ones green is.
+```bash
+npm test                                  # unit suite, seconds
+node tools/visual/snapshot.mjs --check    # nine reference screenshots, byte-identical
+npm run test:smoke                        # boots the page on each theme and clicks every HUD action
+```
+
+The two slower ones need `npx playwright install chromium` first. The screenshots use a fixed
+roster, a pinned clock and seeded randomness, so a change that moves a single pixel shows up.
+If yours is meant to, say so in the PR and include the before and after. The four space
+screenshots are frozen: `--update` refuses them unless `ALLOW_SPACE_BASELINE=1` is set.
 
 ## What makes a PR easy to say yes to
 
-- **One thing at a time.** A harness adapter, or a bug fix, or a refactor — not all three.
-- **Say what you verified and how.** The suite does not cover much, so your description is
-  still most of the evidence. "Ran it against 40 real Codex sessions, screenshots attached" is worth more than a
-  clean diff.
-- **Match the surrounding code.** No semicolons, single quotes, 2-space indent, 110ish columns.
-  Comments in this codebase explain *why* — particularly why an obvious approach was rejected.
-  That style is deliberate; please keep it where you touch things.
-- **Do not add dependencies casually.** The runtime has two, and I would like it to stay small.
-- **Do not widen what gets written to disk.** See the two hard rules above. That restraint is
-  the feature.
-
-## Licensing
-
-By contributing you agree your work is under the MIT licence, same as the rest. There is no CLA.
-
-The bundled art is **CC0** and not covered by that MIT licence — see
-[`public/assets/CREDITS.md`](public/assets/CREDITS.md). If you add art, it needs to be CC0 or
-similarly unencumbered, and it needs its provenance recorded there. Please do not add anything
-under a licence that restricts redistribution; a paid texture pack got caught on the way to this
-release, and I would rather not repeat that.
+- **Say what you verified, and on which machine.** Operating system, harness, roughly how many
+  real threads, and what you clicked. The gates cover a fixture; your description covers the
+  real world.
+- **Match the surrounding code.** No semicolons, single quotes, 2-space indent. Comments explain
+  *why*, especially why an obvious approach was rejected.
+- **No new dependencies without a reason.** The runtime has two.
+- **Never commit real session data.** Screenshots and fixtures should show fixture repos, not
+  your own.
 
 ## Security
 
 If you find something that reads files it should not, writes where it should not, or lets a web
-page you merely visited drive the local server, please open an issue rather than a public PR
-with a working exploit. See "Keeping it local" in the README for the boundaries as they stand.
+page you merely visited drive the local server, open an issue that describes the shape of the
+problem **without** a working exploit, and say that you have more detail to share privately. If
+the same flaw is in upstream's code, it belongs in his tracker too.
+
+## Licensing
+
+By contributing you agree your work is under the [MIT licence](LICENSE), same as the rest. There
+is no CLA. The bundled art is CC0 and listed in `public/assets/<theme>/CREDITS.md`; any art you
+add must be CC0 or similarly unencumbered, with its source recorded there. The name *Bot
+Crossing* belongs to upstream; see [TRADEMARKS.md](TRADEMARKS.md).

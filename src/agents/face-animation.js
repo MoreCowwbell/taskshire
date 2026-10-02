@@ -1,4 +1,5 @@
-import { FACE, walkingFaceAt } from './faces.js'
+import { FACE, walkingFaceAt } from '../themes/space/faces.js'
+import { featureRng } from '../core/rng.js'
 
 const WALK_BLINK = {
   [FACE.strollOpen]: FACE.strollBlink,
@@ -40,7 +41,7 @@ export function animateFace(agent, dt, anim = 1) {
   if (agent.blinkAt <= 0 && (agent.status !== 'sleeping' || strolling) &&
     agent.status !== 'blocked' && agent.status !== 'broken') {
     agent.faceFrame = strolling ? (WALK_BLINK[walkFace] ?? walkFace) : FACE.blink
-    if (agent.blinkAt < -0.12) agent.blinkAt = 2.4 + Math.random() * 5
+    if (agent.blinkAt < -0.12) agent.blinkAt = 2.4 + featureRng('faces')() * 5
     return
   }
   if (strolling) {

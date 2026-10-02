@@ -24,7 +24,18 @@
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
-import { exists, findExecutable, jsonLines, listDirs, listFiles, num, readHead, readTail } from '../lib/fsutil.mjs'
+import {
+  exists,
+  findExecutable,
+  jsonLines,
+  listDirs,
+  listFiles,
+  num,
+  readHead,
+  readTail,
+  stripLongPathPrefix,
+} from '../lib/fsutil.mjs'
+import { oneLine } from '../lib/text.mjs'
 
 const HOME = os.homedir()
 const CODEX_HOME = process.env.CODEX_HOME || path.join(HOME, '.codex')
@@ -248,6 +259,75 @@ async function transcriptFacts(entry, needHead) {
   return facts
 }
 
+/** How long a recap line may be. Same cap as every other harness — the field is one line of UI. */
+const RECAP_CHARS = 140
+
+/**
+ * The last thing the agent said, out of a window of rollout records.
+ *
+ * Function calls and their outputs are not speech, so only `message` items with
+ * `role: 'assistant'` count. Walked forwards rather than backwards because a tail window is
+ * short and the last one wins either way, and an aborted turn is still something the agent said.
+ */
+export function lastAgentMessage(records) {
+  let text = ''
+  for (const r of records) {
+    const p = r?.payload
+    if (r?.type !== 'response_item' || p?.type !== 'message' || p.role !== 'assistant') continue
+    const t = contentText(p.content)
+    if (t.trim()) text = t
+  }
+  return text
+}
+
+/**
+ * `scanRollouts()` memoised for a few seconds.
+ *
+ * A rollout's filename carries an ISO timestamp, so there is nothing to construct from a session
+ * id and the dated folders have to be walked. Once per selection would be fine; once per click
+ * in a run of selections is waste, and the index is stale-tolerant — a session whose file is not
+ * in it yet has no recap for a few seconds, which is invisible next to the poll.
+ */
+const ROLLOUT_MEMO_MS = 5000
+let rolloutMemo = { at: 0, map: null }
+async function rolloutIndex() {
+  if (rolloutMemo.map && Date.now() - rolloutMemo.at < ROLLOUT_MEMO_MS) return rolloutMemo.map
+  const map = await scanRollouts()
+  rolloutMemo = { at: Date.now(), map }
+  return map
+}
+
+/** Kept against mtime and size, the same key `parseCache` uses and for the same reason. */
+const recapCache = new Map()
+
+/**
+ * What this thread was about: the first request and the last answer. Read on selection, never in
+ * the scan, and never from a path the page sent — the session id inside `ref` is checked against
+ * the UUID pattern and then looked up in this adapter's own index of its own store.
+ */
+async function recap(ref) {
+  const id = typeof ref?.sessionId === 'string' && UUID.test(ref.sessionId) ? ref.sessionId : ''
+  if (!id) return { first: '', last: '' }
+  const entry = (await rolloutIndex()).get(id)
+  if (!entry) return { first: '', last: '' }
+
+  const cached = recapCache.get(id)
+  if (cached && cached.mtime === entry.mtime && cached.size === entry.size) return cached.recap
+
+  let first = ''
+  let last = ''
+  try {
+    first = readHeadMeta(jsonLines(await readHead(entry.file, HEAD_BYTES))).prompt
+    last = lastAgentMessage(jsonLines(await readTail(entry.file, TAIL_BYTES)))
+  } catch {
+    /* mid-write, or gone between the index and the read */
+  }
+
+  const out = { first: oneLine(first, RECAP_CHARS), last: oneLine(last, RECAP_CHARS) }
+  recapCache.set(id, { mtime: entry.mtime, size: entry.size, recap: out })
+  return out
+}
+
 function projectOf(cwd) {
   const dir = typeof cwd === 'string' && path.isAbsolute(cwd) ? cwd : ''
   return { projectPath: dir, project: dir ? path.basename(dir) : 'unknown' }
@@ -266,12 +346,14 @@ async function scanThreads() {
     const facts = entry ? await transcriptFacts(entry, !row) : { lifecycle: null, meta: null }
     const meta = facts.meta || {}
 
-    const cwd = row?.cwd || meta.cwd || ''
+    const cwd = stripLongPathPrefix(row?.cwd || meta.cwd || '')
     const { projectPath, project } = projectOf(cwd)
     const prompt = clean(row?.preview || row?.first_user_message || meta.prompt || '')
     const title = clean(row?.title) || clean(index.get(id)?.thread_name) || prompt || 'Untitled thread'
     const lastActivityAt = Math.max(num(row?.updated_at_ms), entry?.mtime || 0)
 
+    const running = facts.lifecycle?.type === 'task_started' && now - lastActivityAt < ACTIVE_WINDOW_MS
+    const archived = row?.archived === 1 || row?.archived === true
     out.push({
       id: ID(id),
       title: title.slice(0, 120),
@@ -290,17 +372,29 @@ async function scanThreads() {
       // Codex records no focus history, so "have you looked at this" is unknowable — not false.
       lastFocusedAt: 0,
       unread: false,
-      running: facts.lifecycle?.type === 'task_started' && now - lastActivityAt < ACTIVE_WINDOW_MS,
+      running,
+      // The colony reads `state`, not `running`: `active` and `idle` are the two that get a
+      // character. Codex has no live-session registry to ask, so a thread mid-turn is `active`
+      // and everything else is `inactive` — there is no way to tell a session sitting at its
+      // prompt from a closed one, and calling a closed one `idle` would stand a villager on a
+      // plot for a terminal that is not there.
+      state: archived ? 'archived' : running ? 'active' : 'inactive',
       hasError: facts.lifecycle?.type === 'task_complete' && facts.lifecycle.error,
       starred: false,
       routine: '',
       prState: '',
-      archived: row?.archived === 1 || row?.archived === true,
+      archived,
       // Bytes, like every other harness: the field is a shared log scale across the whole map,
       // and a token count would make Codex buildings taller than Claude ones for the same work.
       sizeBytes: entry?.size || 0,
       source: row?.source === 'vscode' ? 'vscode' : 'cli',
       canOpen: true,
+      // The command a person would paste to pick this thread back up in a terminal. Text for
+      // the clipboard, never run from here — see `openThread` for the one link this adapter
+      // opens.
+      resume: `codex resume ${id}`,
+      // `cwd` rides along beside the id: `/api/open` is handed nothing but the harness and the
+      // ref, and matching an editor window to this thread needs the folder it ran in.
       ref: { sessionId: id, cwd },
     })
   }
@@ -325,6 +419,9 @@ const cliBinary = () => findExecutable('codex', CLI_DIRS)
  * `codex://threads/<id>` is registered by the Codex desktop app; the OS opener does the rest.
  * `codex resume <id>` is the CLI's own way back into the same session, offered alongside for a
  * page that prefers a terminal. Nothing is run here — the server decides whether it is.
+ *
+ * The command is deliberately not marked `safe`: nothing here checks whether a CLI still holds the
+ * session, so `present()` runs it only for an explicit terminal request, never as a fallback.
  */
 async function openThread(ref) {
   const { sessionId: id, cwd } = ref || {}
@@ -370,5 +467,6 @@ export default {
   scanThreads,
   openThread,
   newSession,
+  recap,
   paths: { CODEX_HOME, SESSIONS_DIR },
 }

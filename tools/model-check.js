@@ -1,12 +1,14 @@
 import * as THREE from 'three'
 import { Sky } from '../src/world/sky.js'
-import { PLANETS } from '../src/world/planet.js'
+import { manifest as SPACE } from '../src/themes/space/manifest.js'
+// The worlds live in the space theme's manifest since the 2026-09-24 merge; keyed by id here.
+const PLANETS = Object.fromEntries(SPACE.settings.map((s) => [s.id, s]))
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js'
 import { Engine } from '../src/core/engine.js'
 import { Settings, PRESETS } from '../src/core/settings.js'
 import { Astronauts } from '../src/agents/astronauts.js'
 import { loadCrew, crewRig, frameFor } from '../src/agents/crew.js'
-import { FACE } from '../src/agents/faces.js'
+import { FACE } from '../src/themes/space/faces.js'
 import { animateFace } from '../src/agents/face-animation.js'
 import { installWorldCurve, setCurveView } from '../src/core/curve.js'
 
@@ -44,7 +46,7 @@ try {
     engine.scene.children.filter(o => o.isHemisphereLight).forEach(o => o.visible = false)
     settings.values.autoTime = false; settings.values.clockTime = false
     sky = new Sky(engine.scene, settings, engine.renderer)
-    sky.setPlanet(PLANETS.ocean); sky.setTime(0.34)
+    sky.setSetting(PLANETS.ocean); sky.setTime(0.34)
     sky.update(0, 0, engine.camera)
     document.querySelector('p').textContent = 'Game sky and lighting · Archipelago · fixed poses'
   }

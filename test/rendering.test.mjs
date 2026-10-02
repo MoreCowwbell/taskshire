@@ -1,12 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Engine } from '../src/core/engine.js'
+import { resolveFeatures } from '../src/core/features.js'
 
 function fixture() {
   const calls = []
   const values = { renderScale: 1, autoQuality: true }
   const engine = Object.create(Engine.prototype)
   engine.settings = { get: (key) => values[key] }
+  engine.features = resolveFeatures()
   engine._targetScale = () => values.renderScale
   engine.canvas = { width: 640, height: 400, parentElement: { clientWidth: 640, clientHeight: 400 } }
   engine.camera = { updateProjectionMatrix() {}, layers: { enableAll() {} } }

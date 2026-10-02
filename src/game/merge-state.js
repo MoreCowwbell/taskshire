@@ -41,7 +41,7 @@ const asArray = (v) => (Array.isArray(v) ? v : [])
 const asObject = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {})
 
 /**
- * A set-like list — `archived`, `opened`, `hiddenProjects` — merged as
+ * A set-like list — `archived`, `opened`, `hidden`, `pinned`, `forgotten` — merged as
  * `(remote ∪ (local \ base)) \ (base \ local)`.
  *
  * Both halves are needed, and it is tempting to write only the first. A plain union keeps every
@@ -101,9 +101,9 @@ function mergeMap(base, local, remote) {
  * Merge one colony state, field by field.
  *
  * `settings` is the deliberate exception: local wins, whole. It is a per-browser preference blob
- * — render scale, shadow quality, which planet — and two tabs are usually the same person on the
+ * — render scale, shadow quality, which setting — and two tabs are usually the same person on the
  * same machine expressing the same intent. Merging it field-wise would hand somebody a colony at
- * half quality on Mars at dusk because two tabs each contributed a third of a preset, which is a
+ * half quality in the wrong setting at dusk because two tabs each contributed a third of a preset, which is a
  * worse outcome than the last tab to touch a slider winning.
  *
  * `updatedAt` is not merged at all: the server stamps it, and the value here would only ever be
@@ -124,7 +124,9 @@ export function mergeState(base, local, remote) {
     opened: mergeSet(b.opened, l.opened, r.opened),
     plots: mergeMap(b.plots, l.plots, r.plots),
     seen: mergeMap(b.seen, l.seen, r.seen),
-    hiddenProjects: mergeSet(b.hiddenProjects, l.hiddenProjects, r.hiddenProjects),
+    hidden: mergeSet(b.hidden, l.hidden, r.hidden),
+    forgotten: mergeSet(b.forgotten, l.forgotten, r.forgotten),
+    pinned: mergeSet(b.pinned, l.pinned, r.pinned),
     viewedAt: mergeMap(b.viewedAt, l.viewedAt, r.viewedAt),
     settings: l.settings && typeof l.settings === 'object' ? l.settings : r.settings ?? null,
   }

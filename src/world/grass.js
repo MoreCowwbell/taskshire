@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { withCurve } from '../core/curve.js'
-import { COLONY_RADIUS, GROUND_SIZE, mulberry } from './planet.js'
+import { COLONY_RADIUS, GROUND_SIZE, mulberry } from './setting.js'
 
 /**
  * The meadow: tens of thousands of wispy blades that lean in the wind.

@@ -40,9 +40,24 @@ test('a zone this tab never touched is left exactly as the other tab left it', (
   assert.deepEqual(out.plots, { a: [[4, 4]] })
 })
 
-test('hiding a repo survives a conflicting save', () => {
-  assert.deepEqual(mergeState({ hiddenProjects: [] }, { hiddenProjects: ['x'] }, { hiddenProjects: [] }).hiddenProjects, ['x'])
-  assert.deepEqual(mergeState({ hiddenProjects: [] }, { hiddenProjects: [] }, { hiddenProjects: ['y'] }).hiddenProjects, ['y'])
+test('hiding and pinning a repo survive a conflicting save', () => {
+  assert.deepEqual(mergeState({ hidden: [] }, { hidden: ['x'] }, { hidden: [] }).hidden, ['x'])
+  assert.deepEqual(mergeState({ pinned: [] }, { pinned: [] }, { pinned: ['y'] }).pinned, ['y'])
+})
+
+test('clearing a group survives a conflicting save, and so does a repo waking back out of it', () => {
+  assert.deepEqual(mergeState({ forgotten: [] }, { forgotten: ['x'] }, { forgotten: [] }).forgotten, ['x'])
+  // The removal half matters as much: a repo that woke up here must not be put back on the
+  // list by the other tab's copy, or its zone would leave the map again on the next poll.
+  assert.deepEqual(mergeState({ forgotten: ['x'] }, { forgotten: [] }, { forgotten: ['x'] }).forgotten, [])
+})
+
+test('a pruned seen row stays pruned through a conflicting save', () => {
+  // `reconcileSeen` forgetting a thread is a key deletion, and a deletion is the one thing a
+  // plain union would undo: the other tab still has the row, so the merge would put it back
+  // and the prune would never survive a 409.
+  const out = mergeState({ seen: { a: 1 } }, { seen: {} }, { seen: { a: 1, b: 2 } })
+  assert.deepEqual(out.seen, { b: 2 })
 })
 
 test('settings are not merged field-wise — the last tab to touch a slider wins whole', () => {
@@ -141,6 +156,18 @@ test('a cross-origin write is refused even though the host is local', async () =
   })
 })
 
+test('a save that cannot land is a 500, and the server lives to answer the next request', { timeout: 10_000 }, async () => {
+  // A directory where the file should be makes the rename fail on every platform — the stand-in
+  // for a lock that outlasts the retries. Before the fix this rejection escaped the handler and
+  // killed the process, which is how a theme switch took `npm run dev` down.
+  await withServer(async ({ call, dir, put }) => {
+    await fsp.mkdir(path.join(dir, 'colony.json'))
+    const res = await put({ archived: [] })
+    assert.equal(res.status, 500)
+    assert.equal((await call('/api/state')).status, 200)
+  })
+})
+
 // ── marking a thread viewed ───────────────────────────────────────────────────
 
 /**
@@ -182,5 +209,109 @@ test('viewedAt is carried through the v1 migration with the ids it keys on', asy
     )
     const state = await (await call('/api/state')).json()
     assert.deepEqual(Object.keys(state.viewedAt), [`claude-code:${id}`])
+  })
+})
+
+test('the v1 migration prefixes seen and opened too, and leaves a desktop id alone', async () => {
+  await withServer(async ({ call, dir }) => {
+    const uuid = 'fe911daa-2393-4e29-8d36-6e37c328594c'
+    // `local_…` is a desktop record id, not a bare UUID, so `migrateId` must not touch it —
+    // the ref rescue in `reconcileArchived` is what matches those, and it matches them bare.
+    const desktop = `local_${uuid}`
+    await fsp.writeFile(
+      path.join(dir, 'colony.json'),
+      JSON.stringify({
+        version: 1,
+        opened: [uuid, desktop],
+        seen: { [uuid]: 11, [desktop]: 22 },
+        updatedAt: 1,
+      })
+    )
+    const state = await (await call('/api/state')).json()
+    assert.deepEqual(state.opened, [`claude-code:${uuid}`, desktop])
+    assert.deepEqual(state.seen, { [`claude-code:${uuid}`]: 11, [desktop]: 22 })
+  })
+})
+
+// ── reconcileArchived ─────────────────────────────────────────────────────────
+
+/** The colony list is the only archive there is, so what it stamps on a thread is the contract. */
+async function withState(state, run) {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'bot-crossing-recon-'))
+  process.env.BOT_CROSSING_DATA = dir
+  await fsp.writeFile(path.join(dir, 'colony.json'), JSON.stringify({ version: 2, updatedAt: 1, ...state }))
+  try {
+    const { reconcileArchived } = await import(`../server/api.mjs?${dir}`)
+    await run(reconcileArchived)
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true })
+  }
+}
+
+test('an archived thread is stamped archived, because the browser keys on state', async () => {
+  await withState({ archived: ['claude-code:a'] }, async (reconcileArchived) => {
+    const [t] = await reconcileArchived([{ id: 'claude-code:a', harness: 'claude-code', state: 'active' }])
+    assert.equal(t.archived, true)
+    assert.equal(t.state, 'archived', 'a live archived session must not keep its character')
+  })
+})
+
+test('a thread nobody archived is returned untouched, object identity included', async () => {
+  await withState({ archived: ['claude-code:a'] }, async (reconcileArchived) => {
+    const input = { id: 'claude-code:b', harness: 'claude-code', state: 'idle' }
+    const [t] = await reconcileArchived([input])
+    assert.equal(t, input, 'no copy, so an unchanged poll stays cheap')
+    assert.equal(t.state, 'idle')
+  })
+})
+
+test('an archive follows a thread that re-keys, through the ids inside ref', async () => {
+  // Archived while the desktop record was canonical; the transcript has since appeared and the
+  // thread now answers to its CLI UUID. The list still holds the old id.
+  const uuid = 'fe911daa-2393-4e29-8d36-6e37c328594c'
+  await withState({ archived: [`claude-code:local_${uuid}`] }, async (reconcileArchived) => {
+    const [t] = await reconcileArchived([
+      { id: `claude-code:${uuid}`, harness: 'claude-code', state: 'inactive', ref: { desktopSessionIds: [`local_${uuid}`] } },
+    ])
+    assert.equal(t.state, 'archived', 'the ref rescue has to try the harness prefix, or it is dead code')
+  })
+})
+
+test('a v1 archive of a bare desktop id still matches, unprefixed', async () => {
+  const uuid = 'fe911daa-2393-4e29-8d36-6e37c328594c'
+  await withState({ archived: [`local_${uuid}`] }, async (reconcileArchived) => {
+    const [t] = await reconcileArchived([
+      { id: `claude-code:${uuid}`, harness: 'claude-code', state: 'inactive', ref: { desktopSessionId: `local_${uuid}` } },
+    ])
+    assert.equal(t.state, 'archived')
+  })
+})
+
+test('an empty archive list short-circuits and returns the same array', async () => {
+  await withState({ archived: [] }, async (reconcileArchived) => {
+    const input = [{ id: 'claude-code:a', harness: 'claude-code', state: 'active' }]
+    assert.equal(await reconcileArchived(input), input)
+  })
+})
+
+// ── what the colony file and its answers give away ────────────────────────────
+
+// Windows has no mode bits to check: the file takes its folder's ACL there instead.
+test('colony.json is written readable by its owner only — it names every repo you work in', { skip: process.platform === 'win32' }, async () => {
+  await withServer(async ({ put, dir }) => {
+    assert.equal((await put({ archived: ['t1'] })).status, 200)
+    const mode = (await fsp.stat(path.join(dir, 'colony.json'))).mode & 0o777
+    assert.equal(mode, 0o600)
+    // And stays so on the next write: a fresh temp file every time, renamed into place.
+    assert.equal((await put({ archived: ['t1', 't2'] })).status, 200)
+    assert.equal((await fsp.stat(path.join(dir, 'colony.json'))).mode & 0o777, 0o600)
+  })
+})
+
+test('every JSON answer says it is JSON and nothing else', async () => {
+  await withServer(async ({ call }) => {
+    const res = await call('/api/state')
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
+    assert.equal(res.headers.get('cache-control'), 'no-store')
   })
 })

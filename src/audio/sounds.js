@@ -77,12 +77,33 @@ const TABLE = {
    * that must never grate: two soft marimba notes a fifth apart, and nothing else.
    */
   'chime-attention': { kind: 'event', gain: 0.6 },
+  /**
+   * A villager's "yes?": two notes plucked on a lute, a fifth or a fourth apart. Four figures,
+   * for the same reason as the robots' six. A lute is softer than a synth blip, so they sit a
+   * little higher than the robots' 0.55: about 2 dB under them, heard side by side.
+   */
+  'pluck-1': { kind: 'event', gain: 0.66 },
+  'pluck-2': { kind: 'event', gain: 0.66 },
+  'pluck-3': { kind: 'event', gain: 0.66 },
+  'pluck-4': { kind: 'event', gain: 0.66 },
+  /**
+   * "Somebody needs you", in the village: a small bronze hand bell rung twice. It interrupts
+   * as the chime does, so it keeps the chime's level and its rule — soft, and nothing bright.
+   */
+  'hand-bell': { kind: 'event', gain: 0.6 },
+  /**
+   * Someone new at the keep: the same bell an octave down, rung once and left to ring. Half a
+   * decibel under the hand bell's trim, so the bell that needs you is always the louder one.
+   */
+  'keep-bell': { kind: 'event', gain: 0.566 },
 
   // Positional loops — attached to things in the world, heard from where they are.
   'work-hammer': { kind: 'loop', gain: 1 },
   'ship-hum': { kind: 'loop', gain: 1 },
   'drone-whine': { kind: 'loop', gain: 1 },
   'shore-lap': { kind: 'loop', gain: 1 },
+  /** A moored boat: water at the hull and the odd slow groan of timber. Its level is in the synth. */
+  'hull-creak': { kind: 'loop', gain: 1 },
 }
 
 /** name → { kind, gain, synth(ctx, dest, opts, noise) → Voice } */
@@ -100,4 +121,18 @@ export const BIRD_KINDS = Object.freeze(['gull', 'parrot', 'crow', 'songbird', '
 
 export function isSound(name) {
   return Object.prototype.hasOwnProperty.call(SOUNDS, name)
+}
+
+/**
+ * Which of `n` phrases answers a click, from one draw `r` in [0, 1): the one the draw lands
+ * on, or the next one round when that is the phrase that answered last time, so nobody says
+ * the same thing twice in a row. `last` is an index, or any value no index equals (−1) before
+ * the first answer. For six phrases this is the colony's old pick less one — `1 + floor(r·6)`,
+ * bumped to the next on a repeat — so the space theme says the same phrase for the same draw
+ * it always did. Pure: the caller owns the draw.
+ */
+export function pickPhrase(r, last, n) {
+  let i = Math.floor(r * n)
+  if (i === last) i = (i + 1) % n
+  return i
 }

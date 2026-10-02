@@ -2,9 +2,9 @@ node_modules
 dist
 
 # Your colony: which repo sits on which plot, and what you archived. Holds the names and
-# paths of the repos you work in, so it stays out of the repository.
-data/*.json
-data/*.tmp
+# paths of the repos you work in, so it stays out of the repository — as does anything else
+# the server writes beside it.
+data/
 
 # Per-machine Claude Code permissions — personal paths live in here.
 .claude/settings.local.json
@@ -18,6 +18,29 @@ assets-src
 
 # Local capture output — not part of the project.
 recordings
+.playwright-mcp
+
+# Screenshot harness output. The baseline directory beside it IS committed.
+tools/visual/out
+
+# Local machine config: where the raw art packs are unzipped. `.env.example` is committed.
+.env
+.env.*
+!.env.example
+
+# Credentials for a private registry, should one ever be configured.
+.npmrc
+
+# Session transcripts and other line-delimited dumps: they carry prompts, paths and repo names.
+*.jsonl
+
+# Art-tool sources and downloaded archives. Built glbs are what the repository ships.
+*.blend
+*.zip
+
+# Development notes (plans, specs, todo, changelog). Kept beside the code, never committed.
+/notes/
+/CLAUDE.local.md
 
 # Sound samples. The game synthesises every sound it needs, so nothing here is required;
 # files dropped in alongside a manifest.json override the synth by name. Kept out of the

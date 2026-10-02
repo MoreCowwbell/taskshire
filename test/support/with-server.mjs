@@ -3,7 +3,11 @@ import os from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
 
-/** `call` sets the `Origin` header the same-origin check expects, so a test never trips it by accident. */
+/**
+ * `call` sets the `Origin` header the same-origin check expects, so a test never trips it by
+ * accident. It names the same host:port the request is sent to, because the check compares the
+ * two whole — `localhost` against `127.0.0.1` is another origin, however local both are.
+ */
 export async function withServer(run) {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'bot-crossing-test-'))
   process.env.BOT_CROSSING_DATA = dir
@@ -14,11 +18,11 @@ export async function withServer(run) {
   const port = server.address().port
   const call = (p, opts) =>
     fetch(`http://127.0.0.1:${port}${p}`, {
-      headers: { Origin: `http://localhost:${port}`, 'Content-Type': 'application/json' },
+      headers: { Origin: `http://127.0.0.1:${port}`, 'Content-Type': 'application/json' },
       ...opts,
     })
   try {
-    return await run({ call, dir, put: (b) => call('/api/state', { method: 'PUT', body: JSON.stringify(b) }) })
+    return await run({ call, dir, port, put: (b) => call('/api/state', { method: 'PUT', body: JSON.stringify(b) }) })
   } finally {
     server.close()
     await fsp.rm(dir, { recursive: true, force: true })

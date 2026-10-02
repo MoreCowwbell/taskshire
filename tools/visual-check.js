@@ -5,7 +5,10 @@ import { Colony } from '../src/game/colony.js'
 import { loadKit } from '../src/world/kit.js'
 import { loadCrew, crewRig } from '../src/agents/crew.js'
 import { installWorldCurve, setCurveView, CURVE_FULL } from '../src/core/curve.js'
-import { PLANETS, mulberry } from '../src/world/planet.js'
+import { mulberry } from '../src/world/setting.js'
+import { manifest as SPACE } from '../src/themes/space/manifest.js'
+// The worlds live in the space theme's manifest since the 2026-09-24 merge; keyed by id here.
+const PLANETS = Object.fromEntries(SPACE.settings.map((s) => [s.id, s]))
 
 // Synthetic data only: no colony API, saved preferences, or user threads are modified.
 Math.random = mulberry(9342)

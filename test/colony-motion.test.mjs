@@ -1,33 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import * as THREE from 'three'
-import { Navigation } from '../src/agents/navigation.js'
 import { Plot } from '../src/world/plots.js'
 import { BuildingSurfaces } from '../src/world/building-surfaces.js'
 import { stepParcel } from '../src/world/parcel-physics.js'
 
 const parcel = (values = {}) => ({ x: 0, y: 6, z: 0, vx: 0, vy: 0, vz: 0, spin: 2, yaw: 0.7, tilt: 0, bounces: 0, landed: false, ...values })
-
-test('an obstacle crossing four buckets repels once, including at negative coordinates', () => {
-  for (const x of [-4, 0, 4]) {
-    const nav = new Navigation()
-    nav.rebuild([{ x, z: x, r: 1, keep: 2 }])
-    const out = nav.repel({ x: x + 1, z: x }, { x: 0, z: 0 })
-    assert.ok(Math.abs(out.x - 3.4) < 1e-10)
-    assert.equal(out.z, 0)
-    assert.ok(nav.insideKeep(x - 1.9, x))
-  }
-})
-
-test('a local work walk cannot cut through a building or its shoulder clearance', () => {
-  const nav = new Navigation()
-  nav.rebuild([{ x: 0, z: 0, r: 1.5, keep: 2 }])
-  assert.equal(nav.clearWalk(-3, 0, 3, 0), false)
-  assert.equal(nav.clearWalk(-3, 1.8, 3, 1.8), false)
-  assert.equal(nav.clearWalk(-3, 3, 3, 3), true)
-  const free = nav.nearestClear(0, 0, 6, (x) => x < -2.1)
-  assert.ok(free && free.x < -2.1 && !nav.insideKeep(free.x, free.z))
-})
 
 test('hex deck containment includes the prop width, not just its centre', () => {
   const plot = Object.create(Plot.prototype)

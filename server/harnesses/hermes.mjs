@@ -72,6 +72,24 @@ function pilotDBs() {
 
 const openRead = (file) => new DatabaseSync(file, { readOnly: true })
 
+/** Nothing stamps `ended_at` when a Hermes process is killed, so "still open" needs a time
+ *  bound too — the same 30 minutes the other harnesses give an open turn. */
+const OPEN_WINDOW_MS = 30 * 60 * 1000
+
+/**
+ * The colony's four states. Hermes, unlike Codex or Cursor, records a session ending:
+ * `ended_at` is stamped when the session closes, so a null one is a session still open. When
+ * its last message is the agent's (or there is none yet) it is waiting on the user — an honest
+ * `idle`; a last message from the user or a tool means the agent speaks next, so `active`.
+ * An open session quiet past the window is `inactive`: a crash looks exactly like that, and a
+ * figure should not stand on a plot for a terminal that is gone.
+ */
+function sessionState(row, lastActivityAt) {
+  if (row.archived === 1) return 'archived'
+  if (row.ended_at != null || Date.now() - lastActivityAt >= OPEN_WINDOW_MS) return 'inactive'
+  return row.last_role === 'user' || row.last_role === 'tool' ? 'active' : 'idle'
+}
+
 function toThread(row, pilot) {
   const root = row.git_repo_root || row.cwd || ''
   // Sessions run from the agent home (or with no cwd) are all the same
@@ -101,6 +119,7 @@ function toThread(row, pilot) {
     lastActivityAt,
     lastFocusedAt: 0,
     running: row.ended_at == null,
+    state: sessionState(row, lastActivityAt),
     unread: Boolean(
       row.last_activity_at && row.last_read_at && row.last_activity_at > row.last_read_at
     ),
@@ -129,7 +148,10 @@ const THREAD_SQL = `
              s.last_activity_at, s.last_read_at,
              (SELECT substr(m.content, 1, 280) FROM messages m
                WHERE m.session_id = s.id AND m.role = 'user' AND m.active = 1
-               ORDER BY m.id ASC LIMIT 1) AS first_user
+               ORDER BY m.id ASC LIMIT 1) AS first_user,
+             (SELECT m.role FROM messages m
+               WHERE m.session_id = s.id AND m.active = 1
+               ORDER BY m.id DESC LIMIT 1) AS last_role
         FROM sessions s
        -- Cron executions are scheduled runs, not threads: each one would
        -- stand on the map as an astronaut nobody ever talks to. Skip them.

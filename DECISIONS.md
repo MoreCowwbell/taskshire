@@ -1,5 +1,20 @@
 # Decisions
 
+> **Fork note (2026-09-26).** Taskshire is a public fork of Bot Crossing
+> (Station-Sciences/bot-crossing). This file is kept verbatim from upstream so the next merge stays
+> small, and every decision in it holds here too, except "Pull requests are treated as feature
+> requests", which is upstream's own PR policy; this fork's is in [CONTRIBUTING.md](CONTRIBUTING.md).
+> Four decisions are the fork's own:
+>
+> - **A thread's state comes from Claude Code's session list** (`~/.claude/sessions`, read by
+>   `threadState()`): active, idle, inactive or archived, rather than how recently its
+>   transcript was written.
+> - **Repos can be hidden or pinned** (`zoneFate`), overriding the fade-and-leave rule per repo.
+> - **The `claude://resume` import link is never used.** Resume goes to the editor window, the
+>   harness's own deep link, or the clipboard, so a thread is never re-imported as a copy.
+> - **A running session is never resumed a second time.** The server refuses it, and the page
+>   says it is already running.
+
 Things that are settled, and why. If a PR argues with one of these, the PR is not wrong — but
 it needs to argue with the reason rather than work around it.
 

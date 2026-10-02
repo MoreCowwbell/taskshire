@@ -127,4 +127,26 @@ const dispatch = (harnessId) => {
 /** Both may be async: an adapter that has to look for a CLI on disk cannot answer synchronously. */
 export const openThread = async (harnessId, ref) => dispatch(harnessId).openThread(ref)
 
-export const newSession = async (harnessId, dir) => dispatch(harnessId).newSession(dir)
+/**
+ * A new session resumes nothing, so no running thread can be handed a second resume by it: its
+ * command is marked `safe` here, once for every adapter, and `present()` may run it unasked.
+ */
+export const newSession = async (harnessId, dir) => {
+  const result = await dispatch(harnessId).newSession(dir)
+  return result?.command ? { ...result, command: { ...result.command, safe: true } } : result
+}
+
+/**
+ * What a thread was about: the first request and the last agent line, read from the harness's
+ * own transcript on selection.
+ *
+ * Optional, and an absence is not a failure — a harness with no `recap`, or an id nothing
+ * answers to, gives two empty strings and the page hides the line. `harnessById` rather than
+ * `dispatch` for exactly that reason: an unknown harness here should be quiet, not a 500.
+ */
+export const recap = async (harnessId, ref) => {
+  const h = harnessById(harnessId)
+  if (typeof h?.recap !== 'function') return { first: '', last: '' }
+  const got = await h.recap(ref)
+  return { first: got?.first || '', last: got?.last || '' }
+}

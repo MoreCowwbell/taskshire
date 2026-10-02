@@ -21,22 +21,21 @@ export default {
   /** → Thread[] in the common shape below. */
   async scanThreads(),
 
-  /** Hand a thread back to its harness. → { ok, url } | { ok: false, error } */
-  openThread(ref),
+  /** Hand a thread back to its harness. Either may be async.
+   *  → { ok, url, command? } | { ok: false, error } */
+  async openThread(ref),
 
-  /** Start a fresh thread rooted at a folder. → { ok, url } */
-  newSession(dir),
+  /** Start a fresh thread rooted at a folder. → { ok, url, command? } */
+  async newSession(dir),
 
-  /** Flip archive state on the harness's own records. → { ok } */
-  async setArchived(ref, archived),
-
-  /** When the harness's GUI last launched, for archive reconciliation. → epoch ms, or 0 */
-  async appStartedAt(),
+  /** Optional. Why a harness that is present cannot be read. → string, '' when healthy */
+  async diagnostic(),
 }
 ```
 
-Optional methods may simply be absent — a CLI-only harness with no archive concept omits
-`setArchived`, and the UI hides the control rather than offering something that will fail.
+**There is no write method, and that is the point.** An adapter reads; it never sets a flag on
+its harness's own records. `setArchived` used to exist and was removed — archiving is the
+colony's own bookkeeping, kept in its own state file. An adapter that grows a write is a bug.
 
 ## The thread shape
 
@@ -52,8 +51,9 @@ Everything downstream reads only these fields. Keep harness-specific ids inside 
 | `running`, `unread`, `hasError`, `archived` | Derived state — see below |
 | `starred`, `routine`, `prState` | Optional signals |
 | `sizeBytes`, `hasTranscript` | How much work this thread represents |
-| `canOpen`, `canArchive` | What this adapter can actually do for this thread |
-| `ref` | Opaque adapter-private blob, handed straight back on open/archive |
+| `canOpen` | Whether an app can jump straight to this thread without changing anything. The UI greys the button out |
+| `resume` | Shell command that reopens the thread in a terminal, or `''` — what the UI offers when `canOpen` is false |
+| `ref` | Opaque adapter-private blob, handed straight back when the page asks to open the thread |
 
 Derive `running` and `unread` **inside the adapter**, not centrally. Those rules are
 harness-specific: what counts as "active" depends on how that agent manages processes, and a
@@ -62,14 +62,18 @@ harness with no focus history cannot answer "unread" at all — in which case th
 
 ## Rules that matter
 
-**Read freely, write almost nothing.** Set the one flag you need and nothing else. Write it back
-through a temp file and rename so a crash cannot truncate a real session record. Verify the
-record is what you think it is before writing — check that its own id matches — because you are
-editing somebody's actual work.
+**Read only. Never write to a harness.** Not the transcripts, not the session records, not one
+flag. Anything the user decides *about* a thread — archived, hidden, pinned — belongs in your own
+state file, keyed by thread id.
 
-**Expect your writes to be overwritten.** Agents commonly hold session records in memory and
-rewrite them wholesale, silently clearing a flag set from outside. Keep your own list of intent
-and re-assert on every scan, so a stomped change comes back within one poll.
+This is worth stating because the obvious design fails. Setting one flag on the harness's own
+record does land on disk and still does nothing useful: a GUI harness serves from the copy it
+loaded at launch, so the thread stays put in its own list until the app restarts, and the app
+rewrites the record from memory the next time it touches the thread. Propping that up takes a
+re-assert on every scan, a process sweep to guess whether the app has re-read the file, and a
+*pending* state for the gap — a great deal of machinery for something that still looks broken to
+anyone with the app open. Keep your own list instead. Archiving in the harness's own UI still
+works, because the scan reads that flag.
 
 **Pattern-check every id before it reaches a shell, a path join, or a URL.** Ids arrive from a
 page, which got them from a scan that may be minutes stale. Validate the shape, and hand
@@ -82,7 +86,12 @@ exited.
 
 **Merge duplicates.** Resuming a thread often writes a second record pointing at the same
 transcript. Merge them, keep the richer one as canonical, and retain both ids so an archive
-covers the ghost as well.
+covers the ghost as well. When the two cannot be merged — the empty one carries no key to merge
+on — drop it: a record with no transcript, no title and no live process, older than a few
+minutes, is not a conversation.
+
+**Prefix every id with your harness id.** `my-harness:1234`, never a bare UUID. Two harnesses
+must never be able to name the same thread, and the id is what persisted state is keyed on.
 
 **Fail on a stale path rather than acting on it.** A folder recorded minutes ago may have moved.
 Re-check it exists and is a directory before doing anything with it.
@@ -105,7 +114,8 @@ method that holds up: find the directory, read one file, let the shape tell you 
 - **Claude Code** — GUI session records under the app's application-support directory, one JSON
   per thread; CLI transcripts as JSONL under a per-project directory in `~/.claude/projects`;
   a live-process registry in `~/.claude/sessions`. Threads may exist in either store or both.
-- **Codex CLI** — rollout files under `~/.codex/sessions`.
+- **Codex CLI** — rollout files under `~/.codex/sessions`, plus one row per thread in a
+  `state_<n>.sqlite` beside them.
 - **OpenCode** — session storage under the platform data directory for `opencode`.
 - **Others** — Antigravity CLI, Amp, Aider, Goose, Cursor CLI, Qwen Code all keep local state;
   none of them in the same shape.

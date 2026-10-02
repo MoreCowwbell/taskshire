@@ -245,6 +245,7 @@ async function scanThreads() {
       const prompt = await firstUserText(db, r.id)
       const title = clean(r.title) || prompt || 'Untitled thread'
       const facts = await sessionFacts(db, r.id, num(r.time_updated))
+      const archived = r.time_archived !== null && r.time_archived !== undefined
       out.push({
         id: ID(r.id),
         title: title.slice(0, 120),
@@ -264,11 +265,16 @@ async function scanThreads() {
         lastFocusedAt: 0,
         unread: false,
         running: facts.running,
+        // The colony reads `state`, not `running`: `active` and `idle` are the two that get a
+        // character. Kilo keeps no record of whether its app is still open, so — as in the
+        // Codex adapter — a thread mid-turn is `active` and everything else `inactive`: a finished
+        // turn in a closed window looks exactly like one waiting at its prompt.
+        state: archived ? 'archived' : facts.running ? 'active' : 'inactive',
         hasError: facts.hasError,
         starred: false,
         routine: '',
         prState: '',
-        archived: r.time_archived !== null && r.time_archived !== undefined,
+        archived,
         // Bytes, like every other harness: the field is a shared log scale
         // across the whole map, and a token count would make Kilo buildings
         // taller than Claude ones for the same work.

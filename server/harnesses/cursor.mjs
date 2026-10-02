@@ -19,7 +19,7 @@
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
-import { exists, jsonLines, listDirs, listFiles, readHead, readTail } from '../lib/fsutil.mjs'
+import { exists, isAbsoluteFolder, jsonLines, listDirs, listFiles, readHead, readTail } from '../lib/fsutil.mjs'
 
 const HOME = os.homedir()
 const PROJECTS = process.env.BOT_CROSSING_CURSOR_PROJECTS || path.join(HOME, '.cursor', 'projects')
@@ -171,6 +171,7 @@ async function scanThreads() {
     const f = await facts(entry)
     const projectPath = await decodeProjectDir(entry.dirName)
     const prompt = f.prompt
+    const running = f.modern && !f.closed && now - entry.mtime < ACTIVE_WINDOW_MS
     threads.push({
       id: ID(entry.id),
       title: (prompt || 'Untitled thread').slice(0, 120),
@@ -189,7 +190,10 @@ async function scanThreads() {
       // No focus history, so "have you read this" is unknowable rather than false.
       lastFocusedAt: 0,
       unread: false,
-      running: f.modern && !f.closed && now - entry.mtime < ACTIVE_WINDOW_MS,
+      running,
+      // As in the Codex adapter: the colony reads `state`, and Cursor has nothing to tell a
+      // quiet open thread from a closed one, so mid-turn is `active` and the rest `inactive`.
+      state: running ? 'active' : 'inactive',
       hasError: f.errored,
       starred: false,
       routine: '',
@@ -216,11 +220,25 @@ function openThread(ref) {
   return { ...shown, note: 'Cursor has no link to a single thread — opened the repo in Cursor; pick it from the agent list.' }
 }
 
-/** `cursor://file/<abs>` is answered by the installed app; the OS opener does the finding. */
+/**
+ * `cursor://file/<abs>` is answered by the installed app; the OS opener does the finding.
+ *
+ * Absolute is judged by `isAbsoluteFolder`, not by a leading `/`: that test was upstream's and
+ * it says no to every Windows path there is, so "new session here" failed on the whole platform.
+ *
+ * The drive-letter segment is the one piece left unescaped. `encodeURIComponent` would turn
+ * `C:` into `C%3A`, and a percent-escaped colon is not a drive to whatever parses the URL on
+ * the other end — the same escape that made `explorer.exe` useless as an opener in `api.mjs`.
+ * Everything else goes through it, so a space in a folder name still arrives as `%20`.
+ */
 function newSession(dir) {
   const abs = String(dir || '').replace(/\\/g, '/')
-  if (!abs.startsWith('/')) return { ok: false, error: 'That folder is not somewhere Cursor can open' }
-  return { ok: true, url: `cursor://file${abs.split('/').map(encodeURIComponent).join('/')}` }
+  if (!isAbsoluteFolder(abs)) return { ok: false, error: 'That folder is not somewhere Cursor can open' }
+  // Only the *first* slash goes, so a UNC path keeps its second one and comes back as
+  // `cursor://file//server/share/repo`. Untested against a real share.
+  const segments = abs.replace(/^\//, '').split('/')
+  const encoded = segments.map((s, i) => (i === 0 && /^[A-Za-z]:$/.test(s) ? s : encodeURIComponent(s)))
+  return { ok: true, url: `cursor://file/${encoded.join('/')}` }
 }
 
 const detect = () => exists(PROJECTS)

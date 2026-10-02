@@ -2,14 +2,16 @@ import * as THREE from 'three'
 import { Engine } from '../src/core/engine.js'
 import { Settings, PRESETS } from '../src/core/settings.js'
 import { Sky } from '../src/world/sky.js'
-import { PLANETS } from '../src/world/planet.js'
+import { manifest as SPACE } from '../src/themes/space/manifest.js'
+// The worlds live in the space theme's manifest since the 2026-09-24 merge; keyed by id here.
+const PLANETS = Object.fromEntries(SPACE.settings.map((s) => [s.id, s]))
 import { Plot, DECK_TOP } from '../src/world/plots.js'
 import { createBuilding } from '../src/world/buildings.js'
 import { SceneryReflections } from '../src/world/reflections.js'
 import { loadKit } from '../src/world/kit.js'
 import { Astronauts } from '../src/agents/astronauts.js'
 import { loadCrew, crewRig, frameFor } from '../src/agents/crew.js'
-import { FACE } from '../src/agents/faces.js'
+import { FACE } from '../src/themes/space/faces.js'
 import { installWorldCurve, setCurveView } from '../src/core/curve.js'
 
 const WIDTH = 1080, HEIGHT = 1920, FPS = 30, DURATION = 22
@@ -29,7 +31,7 @@ try {
   const engine = new Engine(settings).mount(document.querySelector('#stage'))
   const { scene, camera, renderer } = engine
   const sky = new Sky(scene, settings, renderer)
-  sky.setPlanet(PLANETS.ocean); sky.setTime(0.34)
+  sky.setSetting(PLANETS.ocean); sky.setTime(0.34)
   const plot = new Plot({ id: 'showcase', name: 'Showcase', index: 0, cells: [{ q: 0, r: 0 }], accent: 0x386d90 })
   scene.add(plot.group)
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), new THREE.MeshStandardMaterial({ color: 0x355760, roughness: 0.9 }))

@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { withCurve } from '../core/curve.js'
-import { mulberry } from './planet.js'
+import { mulberry } from './setting.js'
 import { stepParcel } from './parcel-physics.js'
 
 /**
@@ -475,7 +475,13 @@ function droneGeometry() {
 
 // ── shared scratch ────────────────────────────────────────────────────────────────────
 
-const _dummy = new THREE.Object3D()
+/**
+ * Built on first use rather than at import: an Object3D spends four draws of `Math.random` on
+ * its uuid, and under the snapshot harness that is the seeded stream the crew is seated from —
+ * a module-scope one would move every villager on a page that merely imports this file.
+ */
+let _dummyObject = null
+const dummy3 = () => _dummyObject || (_dummyObject = new THREE.Object3D())
 const _target = new THREE.Vector3()
 const _sep = { x: 0, z: 0 }
 const _color = new THREE.Color()
@@ -739,13 +745,13 @@ class Flock {
       const roll = THREE.MathUtils.clamp(-right / (maxForce || 1) * 0.9, -0.8, 0.8)
       p.roll += (roll - p.roll) * Math.min(1, 3 * dt)
 
-      _dummy.position.set(p.x, p.y, p.z)
+      dummy3().position.set(p.x, p.y, p.z)
       _target.set(p.x + p.fx, p.y + p.fy, p.z + p.fz)
-      _dummy.lookAt(_target)
-      _dummy.rotateZ(p.roll)
-      _dummy.scale.set(1, 1, 1)
-      _dummy.updateMatrix()
-      this.mesh.setMatrixAt(i, _dummy.matrix)
+      dummy3().lookAt(_target)
+      dummy3().rotateZ(p.roll)
+      dummy3().scale.set(1, 1, 1)
+      dummy3().updateMatrix()
+      this.mesh.setMatrixAt(i, dummy3().matrix)
 
       const o = this.info[i]
       o.x = p.x
@@ -844,11 +850,11 @@ class Meadow {
   }
 
   _write(i, f) {
-    _dummy.position.set(f.x, f.y, f.z)
-    _dummy.rotation.set(THREE.MathUtils.clamp(-f.vy * 0.3, -0.5, 0.5), f.heading, 0)
-    _dummy.scale.set(1, 1, 1)
-    _dummy.updateMatrix()
-    this.mesh.setMatrixAt(i, _dummy.matrix)
+    dummy3().position.set(f.x, f.y, f.z)
+    dummy3().rotation.set(THREE.MathUtils.clamp(-f.vy * 0.3, -0.5, 0.5), f.heading, 0)
+    dummy3().scale.set(1, 1, 1)
+    dummy3().updateMatrix()
+    this.mesh.setMatrixAt(i, dummy3().matrix)
   }
 
   update(dt, camera, motion) {
@@ -999,12 +1005,12 @@ class Shoal {
         hooks?.sound?.('fish-splash', f.x, surface, f.z)
         continue
       }
-      _dummy.position.set(f.x, f.y, f.z)
+      dummy3().position.set(f.x, f.y, f.z)
       _target.set(f.x + f.vx, f.y + f.vy, f.z + f.vz)
-      _dummy.lookAt(_target)
-      _dummy.scale.set(1, 1, 1)
-      _dummy.updateMatrix()
-      this.mesh.setMatrixAt(i, _dummy.matrix)
+      dummy3().lookAt(_target)
+      dummy3().scale.set(1, 1, 1)
+      dummy3().updateMatrix()
+      this.mesh.setMatrixAt(i, dummy3().matrix)
     }
     this.mesh.instanceMatrix.needsUpdate = true
   }
@@ -1182,11 +1188,11 @@ class Fleet {
         list.splice(i, 1)
         continue
       }
-      _dummy.position.set(p.x, p.y, p.z)
-      _dummy.rotation.set(p.tilt, p.yaw, 0)
-      _dummy.scale.setScalar(fade)
-      _dummy.updateMatrix()
-      this.parcelMesh.setMatrixAt(n++, _dummy.matrix)
+      dummy3().position.set(p.x, p.y, p.z)
+      dummy3().rotation.set(p.tilt, p.yaw, 0)
+      dummy3().scale.setScalar(fade)
+      dummy3().updateMatrix()
+      this.parcelMesh.setMatrixAt(n++, dummy3().matrix)
     }
     this.parcelMesh.count = n
     this.parcelMesh.instanceMatrix.needsUpdate = true
@@ -1379,13 +1385,13 @@ class Fleet {
         }
       }
 
-      _dummy.position.set(d.x, d.y, d.z)
-      _dummy.rotation.set(0, d.heading, 0)
-      _dummy.rotateX(d.pitch)
-      _dummy.rotateZ(d.roll)
-      _dummy.scale.set(1, 1, 1)
-      _dummy.updateMatrix()
-      this.mesh.setMatrixAt(i, _dummy.matrix)
+      dummy3().position.set(d.x, d.y, d.z)
+      dummy3().rotation.set(0, d.heading, 0)
+      dummy3().rotateX(d.pitch)
+      dummy3().rotateZ(d.roll)
+      dummy3().scale.set(1, 1, 1)
+      dummy3().updateMatrix()
+      this.mesh.setMatrixAt(i, dummy3().matrix)
 
       const o = this.pool[i]
       o.x = d.x

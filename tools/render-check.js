@@ -89,7 +89,7 @@ try {
           if ((data[i] & 0x7c00) === 0x7c00) positions.push({ x: (i / 4) % target.width, y: Math.floor(i / 4 / target.width), values: Array.from(data.slice(i, i + 4)) })
         }
         const isolation = []
-        for (const object of [colony.water?.mesh, colony.grass?.mesh, ...engine.scene.children].filter(Boolean)) {
+        for (const object of [colony.sea?.mesh, colony.grass?.mesh, ...engine.scene.children].filter(Boolean)) {
           const visible = object.visible
           object.visible = false
           render.call(this, renderer, write, read, ...args)

@@ -20,9 +20,9 @@ export const CHECK_EVERY = [35, 85]
 
 export const PROP_KINDS = ['phone']
 
-/** Which prop a check uses. Uniform for now; weights can go here when there are more. */
-export function pickProp() {
-  return PROP_KINDS[Math.floor(Math.random() * PROP_KINDS.length)]
+/** Which prop a check uses, from the caller's stream. Uniform for now; weights can go here when there are more. */
+export function pickProp(random = Math.random) {
+  return PROP_KINDS[Math.floor(random() * PROP_KINDS.length)]
 }
 
 // ── the phone ───────────────────────────────────────────────────────────────────────────

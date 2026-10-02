@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
-import { mulberry } from './planet.js'
+import { mulberry } from './setting.js'
 import { withCurve } from '../core/curve.js'
 
 /**

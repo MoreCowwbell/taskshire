@@ -1,44 +1,136 @@
-# Bot Crossing — your agent threads, as a colony
+# Taskshire — your agent threads, as a medieval village
 
-**[botcrossing.com](https://botcrossing.com)**
+*A medieval fork of [Bot Crossing](https://github.com/Station-Sciences/bot-crossing).*
 
-Every coding-agent thread on this machine is a little bot. They walk out of the ship, claim
-a plot for their repo, and build something. When one needs you it stops and holds a `?` over
-its head; click it and the thread opens back in whichever harness it came from.
+Taskshire is a medieval village where every coding-agent thread on your machine becomes a
+villager. Each repo is a zone, a plot of land with a building for every thread, and the building
+grows as the work of the thread grows. When a thread needs you, its villager stops and holds a
+`?` over its head. Click the villager to open its card, which shows your first request and the
+last reply of the agent. Press Resume, and you are back in the VS Code window, terminal or
+desktop app where that repo is open.
 
-It reads the harness's own files, on your own machine. Nothing is uploaded, there is no
-account, and **it never writes to a harness at all** — `data/colony.json`, where the map lives,
-is the only file it writes anywhere.
+Taskshire is built on **[Bot Crossing](https://github.com/Station-Sciences/bot-crossing)** by
+[Jarren Rocks](https://jarren.rocks) (see [botcrossing.com](https://botcrossing.com) and
+[TRADEMARKS.md](TRADEMARKS.md)). His space colony is still here, one click away under
+Settings › Theme. All credit to Jarren for the original concept. The fork's own additions are in
+the list below.
 
-> **Status:** published as-is. I built this for myself and cannot promise to maintain it —
-> issues and PRs are welcome but may go unanswered, and forking is an entirely reasonable
-> thing to do. [CONTRIBUTING.md](CONTRIBUTING.md) sets out what to expect.
+Taskshire reads the files of each harness on your own machine. It uploads nothing and needs no
+account. **Taskshire never writes to a harness.** The only file that Taskshire writes is
+`data/colony.json`, which stores the map.
+
+> **Status:** The fork is kept on a best-effort basis. Issues and pull requests are welcome, and
+> the maintainer reads them when time allows. [CONTRIBUTING.md](CONTRIBUTING.md) tells you what
+> to expect.
+
+![A knight waiting for you, a `?` glowing over its head, beside its half-built house](docs/images/villager-waving.png)
+
+## What this fork adds
+
+### The village
+
+1. **A medieval village and its cast.** A fresh install opens on KayKit's hexagon village, with
+   keeps, towers, windmills, a water wheel, cannons and ships. Eight adventurers live in it, each
+   with its own trade and a shield in the colour of its repo. The original space colony is still
+   available under Settings.
+2. **Subagents as half-size helpers.** When a thread starts subagents, small helpers in the repo
+   colour appear beside its villager. The helpers leave when their work is done.
+3. **Three settings and four seasons.** A forest with a keep, a valley with a coastline and a
+   ship, and a mountain with a fortress. The Season switch puts any season on any setting.
+4. **Buildings grow with the work.** A building starts as scaffolding, then gets walls, a yard,
+   torches and a pennant. After dark, the torches light the village.
+5. **Rest, sleep and ghost towns.** A villager sits down after 1 quiet day and lies down after 3.
+   A repo that is quiet for 3 days becomes a ghost town: crates stand open, saplings grow, and the
+   houses fall into ruin. When you reopen a thread, its villager walks back out of the keep (all adjustable in settings).
+
+<p>
+  <img src="docs/images/forest-day-helpers.png" width="49%" alt="Half-size helpers beside the session that started them">
+  <img src="docs/images/forest-day-ghost.png" width="49%" alt="A quiet repo gone to seed, next to two busy ones">
+</p>
+
+### Knowing what each agent is doing, and getting back to it
+
+6. **The card says what the thread is about.** Click a villager, or its row in the sidebar, to
+   see the first thing that you asked and the last thing that the agent said. You can find the
+   one thread you want among 20 without opening any of them.
+7. **Resume takes you back to where you work.** A setting selects the target. The first target is
+   the VS Code workspace that already has the repo open: Taskshire finds it among your multi-root
+   workspaces and brings it forward, or opens a new window. The other targets are the desktop app
+   of the harness, or the resume command with its ID, copied and ready to paste into your
+   terminal. Taskshire never resumes a thread that still runs.
+8. **Four thread states, read from Claude Code's own session list.** Active, idle (open and
+   waiting for you), inactive (closed) and archived. **Viewed** clears the `?` of an idle thread.
+9. **Windows and MacOS Compatible.** Session records, links, folders and drive-letter spellings
+   all work on Windows. On macOS and Linux, the openers go through the operating system as before.
+10. **Only real sessions.** Sessions that plugins start through an SDK, and one-line stub files,
+    no longer count as threads.
+11. **Quiet repos fade, then leave.** After 3 quiet days a zone fades. After 14 days (adjustable in settings) the repo
+    leaves the map for a Gone list, and it comes back to the same ground when a thread wakes it.
+    Both times are adjustable in Settings, and Pin and Hide override them for each repo.
+12. **A repo list you can filter.** Active, Idle, Inactive and Archived chips, a name filter, a
+    Hide button on every row, and one Archive section with an Unarchive button beside each thread.
+13. **Compact, and zones that move themselves.** One button repacks the map. A zone that its
+    neighbours box in moves to open ground and takes its villagers with it.
+
+![A villager's card and its sidebar row: what was asked, what the agent last said, and Resume, Viewed and Archive](docs/images/card.png)
+
+### Fixes to the original space theme
+
+14. **The bots reach their work.** A bot no longer walks into a wall forever, building footprints
+    no longer cut off work sites, and the walking area covers every tile that a zone can get.
+15. **The details that never showed.** The welding sparks now fire on the downbeat of the hammer.
+    A retiring building no longer freezes as a stump, a full zone no longer stacks houses inside
+    each other, and scenery no longer overhangs the zones.
+
+<p>
+  <img src="docs/images/valley-day.png" width="49%" alt="The valley: plots by the shore, the ship at sea">
+  <img src="docs/images/mountain-night.png" width="49%" alt="The mountain fortress at night">
+</p>
 
 ## Run it
 
-```bash
-npm install && npm run dev
-```
+1. Install Node 22.13 or newer.
+2. Clone the repo and start the dev server:
 
-Needs Node 22.13 or newer. `npm test` runs the suite.
+   ```bash
+   git clone https://github.com/MoreCowwbell/taskshire.git
+   cd taskshire
+   npm install && npm run dev
+   ```
 
-`npm run dev` is the whole thing: the API lives inside the Vite dev server, so there is no
-second process. For a built version, `npm start` (build + serve) or `npm run serve` if
-`dist/` already exists. Binds to `127.0.0.1` by default, and answers only its own page — see
-[Keeping it local](#keeping-it-local).
+3. Open the address that the dev server prints (`http://localhost:5274` by default).
 
-**macOS, Linux and Windows.** Opening a thread, revealing a folder and starting a new session
-all go through a `harness://` deep link handed to the OS opener — `open(1)` on macOS,
-`xdg-open` on Linux, ShellExecute on Windows. The scanning half was portable already. On Linux,
-where a desktop app often is not installed, the scheme is checked first and a terminal running
-the harness's own CLI opens instead when nothing answers it.
-A setting, *Open threads in*, makes the terminal the first choice rather than the fallback, on all three.
+Taskshire reads the same session files that the harnesses write. On a machine with Claude Code or
+Codex threads, the village fills with your own work immediately.
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Runs everything: the API lives inside the Vite dev server |
+| `npm start` | Builds the app, then serves the build |
+| `npm run serve` | Serves an existing `dist/` |
+| `npm test` | Runs the unit suite |
+| `npm run test:visual` | Compares 9 reference screenshots, byte for byte |
+| `npm run test:smoke` | Boots the real page on each theme and clicks through the whole HUD |
+
+The two slower gates, `test:visual` and `test:smoke`, need `npx playwright install chromium`
+first. About the screenshot references:
+
+- They were recorded on Windows, in the Chromium that Playwright 1.63 installs, rendered on the
+  CPU through SwiftShader.
+- On another OS or Playwright version, record your own references first with
+  `npm run test:visual:update`, then compare your change against those.
+- The 4 space screenshots are frozen: `--update` refuses to rewrite them unless you set
+  `ALLOW_SPACE_BASELINE=1`.
+
+The server binds to `127.0.0.1` and answers only its own page; see
+[Keeping it local](#keeping-it-local). Taskshire opens threads and folders through the operating
+system: `open(1)` on macOS, `xdg-open` on Linux, ShellExecute on Windows. On Linux, if no desktop
+app answers the link, a terminal opens with the CLI of the harness instead.
 
 ## Which harnesses work
 
-A **harness** is whatever actually runs your threads. Bot Crossing reads each one's local
-session files through a small adapter, so support is per-harness and mostly a matter of
-somebody writing that adapter.
+A **harness** is the program that runs your threads. Taskshire reads the local session files of
+each harness through a small adapter.
 
 | Harness | Status |
 | --- | --- |
@@ -46,8 +138,8 @@ somebody writing that adapter.
 | **[Codex](https://developers.openai.com/codex/cli)** (OpenAI) | ✅ **Supported** — desktop, VS Code and CLI sessions, opened through `codex://` |
 | **[OpenCode](https://opencode.ai)** | ✅ **Supported** — top-level sessions from its own store; no per-thread link to open |
 | **[Antigravity CLI](https://antigravity.google)** (Google) | ✅ **Supported** — transcripts, opened through `antigravity://`. The successor to Gemini CLI, which Google stopped serving individual accounts on 18 June 2026 |
-| **[Cursor](https://cursor.com)** (Anysphere) | ✅ **Supported** — agent transcripts; the composer/sidebar threads are not read yet |
-| **[Hermes](https://github.com/opsmason/hermes)** | ✅ **Supported** — sessions per pilot profile. Lives in the terminal and chat apps, so there is no link to open |
+| **[Cursor](https://cursor.com)** (Anysphere) | ✅ **Supported** — agent transcripts; the composer and sidebar threads are not read yet |
+| **[Hermes](https://github.com/NousResearch/hermes-agent)** (Nous Research) | ✅ **Supported** — sessions per pilot profile. Hermes lives in the terminal and chat apps, so there is no link to open |
 | **[Kilo Code](https://kilocode.ai)** | ✅ **Supported** — top-level sessions; a thread opens as its repo folder in VS Code |
 | [Amp](https://ampcode.com) (Sourcegraph) | ⬜ Not yet |
 | [Aider](https://aider.chat) | ⬜ Not yet |
@@ -55,253 +147,96 @@ somebody writing that adapter.
 | [Qwen Code](https://github.com/QwenLM/qwen-code) (Alibaba) | ⬜ Not yet |
 | [Amazon Q Developer CLI](https://aws.amazon.com/q/developer/) | ⬜ Not yet |
 
-Every harness that is installed shows up at once — the colony is the union of all of them, and
-a bot carries the name of the harness it belongs to.
+Every installed harness shows up at once, and each villager carries the name of its harness.
 
 ### Adding one
 
-One new file in `server/harnesses/`, one line in its `index.mjs`, and nothing else. The
-interface is small and written down in full, along with the thread shape, the ground rules,
-and how to find where a given harness keeps its sessions:
+A new harness is one new file in `server/harnesses/` and one line in its `index.mjs`. The
+interface, the thread shape and how to find a harness's session files are in
+**[`server/harnesses/README.md`](server/harnesses/README.md)**.
 
-**→ [`server/harnesses/README.md`](server/harnesses/README.md)**
-
-If you add one, a PR is very welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) first, which is
-honest about how much support I can offer. If landing it means editing the scanner or anything
-under `src/`, please mention that: it means the seam needs widening, and I would rather fix that
-than have you work around it.
+A PR is welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. An adapter that also works on the
+original Bot Crossing belongs upstream too, so that every fork gets it. If the adapter needs
+changes to the scanner or to `src/`, say so in the PR: the interface then needs widening.
 
 ## What you are looking at
 
-| In the colony | In your threads |
+| In the village | In your threads |
 | --- | --- |
-| One hex zone | One repo. Bigger repos claim more tiles — one per seven threads, grown as a contiguous blob from the middle outward. A zone stays where it is: see below |
-| One bot + one building | One session |
-| A bot with no building of its own | An errand that session has out right now — a subagent |
+| One hex zone | One repo. A bigger repo gets more tiles: 1 tile per 7 threads |
+| One villager (a bot in space) and one building | One thread |
 | How finished a building looks | How large its transcript is, on a log scale |
-| Scaffolding | Somebody is at that site right now |
-| Walking out of the ship | A thread that just appeared |
-| Walking back into the ship | You archived it |
+| Scaffolding | Somebody works at that site now |
+| A villager walks in from the keep or the ship | A thread that just appeared |
+| A villager walks back into the keep or the ship | You archived the thread |
+| A half-size helper | A subagent that the thread runs now |
 
-### A zone stays where it is
+Each thread does one thing at a time. The first row that matches wins, and only the states that
+need something from you get a badge:
 
-The map is only useful if you can learn it, so the layout is *sticky*. The previous
-arrangement is an input to the next one: a repo that still needs the same number of tiles
-keeps exactly the tiles it had, one that grew keeps them and claims neighbours, and one that
-shrank gives back whatever it claimed most recently — so growing and shrinking again returns
-a zone to precisely the shape it started in. Only a repo that has never been placed is
-placed at all, and it takes the innermost tiles still free.
-
-A zone's origin is its **root** tile rather than the centre of the tiles it happens to hold,
-so gaining one does not drag its buildings, its bots and its name sideways; the new tile
-simply appears alongside. And the arrangement is written to `data/colony.json`, so the map
-you have learned survives a reload — including for a repo whose last thread you archived,
-which comes back to the same ground when you start a new one.
-
-**And a zone can be carried.** Press and hold one, drag it, drop it on ground that is free: the
-footprint follows the cursor as rounded tiles, green where it will land and red where it will not.
-A zone other zones were leaning on used to refuse to move at all, because the allocator throws the
-whole layout away when the colony breaks into islands. Now the drop stands and whatever it cut
-loose is slid back into contact, each stranded group moving as one body so an arrangement you made
-by hand is not reshuffled around you. Two things are still refused: a drop that lands nowhere near
-the colony, and one that would leave the zone holding a corner of the map on its own.
-
-The version before this was a pure function of the thread counts: one session appearing
-anywhere changed the sort order, the order decided the tiles, and the whole colony re-laid
-itself out. A zone you were watching could jump to the far side of the map because a
-*different* repo gained a thread.
-
-### The deck has to clear the ground
-
-Inside the colony the terrain is gentle but not flat — it runs from about -0.3 to +0.24 on
-the Moon, and half again as far on Mars. A deck's top face has to sit above the roughest
-ground any plot can be dealt, or the ground comes through it: the slab reads as sunken, props
-standing on it are buried to the waist, and every surface where the two meet tears. So the
-slab is 0.45 tall, and everything on a plot — buildings, kerbs, clutter, boots — is measured
-from that one number rather than from a height of its own.
-
-Ground scatter has to miss the plots, and the order it happens in is the whole problem: the
-world is built before the first roster arrives, so at that moment there are no plots to miss.
-Boulders and trees would end up under decks laid on top of them afterwards, poking through in
-fragments. The scatter is therefore rebuilt whenever a zone's footprint changes — cheap,
-because it no longer drags the terrain mesh along with it.
-
-Bot behaviour is a **strict precedence** rather than a set of independent flags, so a
-thread can only ever be doing one thing. First match wins:
-
-| Signal | What the bot does | Badge |
+| Signal | What the villager does | Badge |
 | --- | --- | --- |
-| Errored | Slumps, red eyes, fault light stutters | `!` |
-| Running now | Hammers away at its building, sparks fly | `⚒` |
-| PR merged | Jumps, confetti, heart eyes | `✓` |
-| Unread | **Stops and waits on you** | `?` |
-| Nothing for 3 days | Sits down and sleeps, `z` bubbles | — |
-| Anything else | Potters around its plot | — |
+| Errored | Slumps | `!` |
+| Running now | Works at its building | `⚒` |
+| PR merged | Jumps and cheers | `✓` |
+| Unread, or idle and not yet marked viewed | **Stops and waits for you** | `?` |
+| Nothing for 1 day | Sits down, awake | — |
+| Nothing for 3 days | Sits down and sleeps | — |
+| Anything else | Wanders around its zone | — |
 
-Only the states that want something from you get a badge. With most of a real thread list
-sitting quiet, a symbol over every bot buries the one `?` that actually matters.
+### How the map behaves
 
-Zone names follow the same rule: a plot shows its name only while somebody there is working,
-waiting or stuck. Everything else is nameless until you point at it. The plate itself is just
-text over a soft halo with a small accent dot — no panel, no outline.
+- **Zones stay where they are.** The layout is sticky, so you can learn the map. A repo keeps its
+  tiles as it grows and shrinks, and only a new repo takes new ground. `data/colony.json` keeps
+  the layout across reloads.
+- **You can move a zone.** Press and hold a zone, drag it, and drop it on free ground. The
+  footprint shows green where it can land and red where it cannot.
+- **Quiet repos fade, then leave.** *Fade after* (3 days) and *Hide after* (14 days) in the Repos
+  group set the times. Anything running, unread or errored wakes a zone at once.
+- **Hidden and Gone.** **Pin** keeps a repo on the map; **Hide** takes it off. The *Hidden* and
+  *Gone* lists at the foot of the sidebar bring a repo back in one click, and **Clear all**
+  empties a list in two.
+- **Helpers are not threads.** A helper claims no tiles and cannot be archived. It leaves when its
+  subagent finishes, or after 20 quiet minutes.
 
-## Getting about
+## Using it
 
-Bots route rather than drift. Buildings and the landing pad are rasterised into a
-navigation grid whenever the roster changes, and the bots walk it with A*, string-pulled
-afterwards so they take the corners they actually need instead of a visible staircase.
+Everything is in one panel on the right. Click a villager, a zone, its name plate or a repo in
+the list to open that repo. `?` opens the in-app help.
 
-Two guarantees, deliberately independent:
+**The repo:**
 
-- **Routing** finds a way *around* a building, including threading the gaps between a ring of
-  them. Blocking radii are the building's bounding radius trimmed a little plus the
-  bot's own width — the trim is what keeps those gaps walkable.
-- **Collision** is applied to every step whether or not a path is being followed. Routing can
-  fail — a site walled in between polls, a path budget that has not caught up — and walking
-  through a wall must not be what happens when it does. Blocked head-on, a bot slides
-  along the obstacle instead of stopping dead.
+- **New conversation** (`C`) starts a new thread in the folder of the repo.
+- **Finder** (Explorer on Windows) opens the folder. **Copy path** copies its path.
+- **Hide** takes the repo off the map. **Pin** keeps it from fading.
 
-Measured over the live colony: 288 path legs, **0 crossing a building**, and **0 penetrations
-across 78,000 agent-frames**. A typical path costs 6 µs (most are a clear straight shot and
-skip the search); the worst frame when a poll invalidates every route at once is 0.6 ms.
+**The thread** opens in a card beside its villager, and the camera follows the villager. The
+crosshair on the card stops the camera from following.
 
-They also push each other apart, so a busy plot is a crowd rather than a pile. That spacing
-is measured against the widest thing a bot wears — the helmet, at 0.95 units — because
-holding a crowd at less than that is a crowd standing *inside* itself, which is what the first
-version did at 0.72. Arrival is derived from the same number and is deliberately larger: an
-bot that had to get closer than its neighbours would let it could never finish arriving,
-and would shoulder at the crowd for as long as its thread existed.
+- **Open** (`Enter`) hands the thread back to its harness.
+- **Viewed** (`V`) stops a thread asking for you until it does something new.
+- **Archive** (`A`) retires the thread in Taskshire only. Nothing is written to the harness, and a
+  thread that you archive in Claude Code's own app goes home on the next poll.
 
-Standing spots are placed clear of the building's own blocked radius rather than at a fixed
-distance from it, and checked against the navigation grid — a spot inside a wall is a spot the
-bots can never reach, and the bot sent to it walks at that wall forever. Measured over
-the live colony: **68 of 68 bots settled, nobody closer than 1.14 units, no standing spot
-left inside an obstacle.** As a last resort a bot that has been blocked for six seconds
-adopts the ground it got to instead of pushing on.
+For Claude Code, Open uses the `claude://claude.ai/epitaxy/…` link, which navigates the desktop
+app to the thread. Taskshire never uses `claude://resume`, which imports the transcript as a
+second session.
 
-## Clicking one
+### Getting around
 
-All of the chrome is one panel on the right — the name, the counts, and every repo. There
-is no top bar and no strip along the bottom: a colony is a place, and a place reads better
-without a frame around it.
-
-A bot, a zone's deck, the name plate over it, or a repo in that list — all four drill
-into the same repo. Picking somebody is also picking the zone they are standing on.
-
-**The repo**, at the top, whether or not anybody is selected:
-
-- **New conversation** (`C`) starts a fresh thread in that folder. It is the same
-  `claude://code/new?folder=…` deep link Finder's "New Claude Code Session Here" quick
-  action uses, so the desktop app opens an empty session with the repo as its workspace —
-  nothing is resumed and nothing is written.
-- **Finder** (Explorer on Windows) opens the folder, **Copy path** copies it.
-- Underneath, everything running in that repo, whoever wants something first. Clicking one
-  flies to its bot and selects it.
-
-**The thread**, when a bot is selected, in a card parked **beside that bot**
-rather than in the panel: its face, title, worktree, branch, model, last activity, and how
-far along its building is. The answer to "what is this one doing" belongs next to the thing
-you clicked, so the card follows its bot around the screen — preferring its right,
-flipping to its left rather than sliding under the sidebar, and never leaving the window.
-It is moved with a transform rather than with `left`/`top`, the one geometric change a
-browser makes without touching layout, so following a walking bot costs nothing.
-
-The camera follows the bot you picked, which is on by default — you clicked it to watch it, and a
-working bot rarely stands still long enough to be watched otherwise. Panning, orbiting and zooming
-all still work while it follows; deselecting stops it, and the crosshair on the card turns it off
-for good if you would rather the view stayed put.
-
-- **Open** hands the thread back to whichever harness owns it and its app comes forward. On a
-  Linux box with no desktop app to answer the deep link, a terminal opens with the CLI resuming
-  the session instead.
-  *Open threads in: Terminal*, in settings, asks for that every time, on any of the three. On Windows a
-  thread that is already running in a terminal gets that window fronted instead of a second copy of
-  itself imported into the desktop app.
-- **Viewed** (`V`), on a thread that is asking for you, puts its hand down. The harness only
-  counts a thread as read once it has been focused in its own app, so one you answered in a
-  terminal waves for good. This records when you looked, and the thread starts asking again the
-  moment it does something newer.
-- **Archive** retires the thread *here*: the bot walks back up the ramp and boards the
-  ship. Nothing is written to the harness — see [Keeping it local](#keeping-it-local). A thread
-  you archive in the harness's own app goes home on the next poll too, because the scan reads
-  that flag.
-- **Hide** takes a whole repo off the map without touching a single thread. It comes back from
-  the list at the foot of the sidebar, onto the same ground it left.
-
-**Quiet repos fold away** by default: a repo where every thread has been silent for three days
-comes off the map, which on a machine with a few harnesses and a lot of checkouts is most of
-them. The sidebar keeps a count and a way back, and a repo returns to its own ground the moment
-a thread in it wakes up. *Hide dormant repos* in settings turns it off.
-
-Only one button in the panel is ever the accent colour: whichever action is the immediate
-one. `Esc` steps outward a notch at a time — the thread first, then its zone.
-
-Opening uses `claude://claude.ai/epitaxy/<local_…>`, which *navigates* the desktop app to a
-thread it already has. `claude://resume` is the fallback for threads that only exist as a CLI
-transcript: it *imports* the transcript, which creates a second untitled session and rewrites
-the `.jsonl`, so it is only ever used when there is nothing to navigate to.
-
-Archiving carries a deliberate one-writer discipline: the browser owns
-`data/colony.json` and PUTs it whole, `/api/archive` only touches Claude Code's records. If
-both wrote it, a save from a page holding older state would silently drop every archive made
-since that page loaded. Claude Code also rewrites its session records from memory and can
-stomp the flag, so the colony re-asserts it on every scan — an archive that gets stomped comes
-back within one poll.
-
-Nothing is ever written to your Claude Code data except that one `isArchived` field. The
-folder buttons only ever hand a path to `open`.
-
-The deep links above are the **Claude Code adapter's** business, not the colony's — another
-harness plugs its own in, and a harness with no deep link simply greys the button out. See
-[`server/harnesses/README.md`](server/harnesses/README.md).
-
-Plots are keyed by the folder's *name*, which is all the colony needs to draw one, so the path
-is read back off the threads standing there. Where a name is ambiguous — `~/workspaces/1/foo`
-and `~/workspaces/2/foo`, which is what you get keeping parallel copies instead of worktrees —
-it grows leftward until it is not, and you get `1/foo` and `2/foo` on separate ground. Only
-names that actually collide change, because the name is also the key your saved layout is
-stored under and disambiguating everything would move every plot on the map. A repo that has
-moved or gone since the last scan fails at the server rather than handing `open` a dead path.
-
-Name plates are hit-tested in screen space rather than raycast: they are billboarded in the
-vertex shader, so a raycast would test the quad where it was authored rather than where it
-ended up. That test deliberately ignores whether the plate is currently faded in — pointing
-at where a quiet project's name *would* be is exactly what makes it appear.
-
-## Getting around
-
-Navigation is Google Earth's, including both of the things that make Earth feel like Earth:
-
-| | |
-| --- | --- |
-| **Drag** | Grabs the ground. The point under your cursor stays pinned there for the whole drag |
-| **Right-drag** (or ⌃ / ⇧ / middle-drag) | Tilt and rotate. Up tilts toward the horizon |
-| **Scroll** | Zooms **at the cursor**, not at the screen centre |
-| **Two fingers** | Pinch to zoom, drag to pan — both anchored between your fingers |
-| **Arrows**, **+** / **−** | Move and zoom from the keyboard |
-| **Orbit mode** (rail button, or `O`) | Earth's auto-rotate: a slow sweep around whatever is centred, about two minutes a revolution. It drives the heading only, so you can keep dragging, tilting and zooming while it runs |
-
-Both anchors are exact, not approximate: a 200px drag holds its grabbed point to 0.00 world
-units, and dollying 62→37 holds the cursor's point to 0.01.
-
-Optionally, letting go can ease the *angle* back to the nearest clean isometric heading after
-a couple of seconds. Your position and zoom are never touched — going home on its own would
-fight you; tidying the angle after you stop does not. It is off by default, because a camera
-that moves when you did not ask it to is startling the first time you meet it. Turn it on
-under **View → Return to isometric**.
-
-## Keys
+The camera works like Google Earth: drag to grab the ground, right-drag to tilt and rotate, and
+scroll to zoom at the cursor. On a touch screen, pinch to zoom and drag with two fingers to pan.
 
 | Key | Does |
 | --- | --- |
-| `H` / `⌘\` | **Hide every panel.** The colony still reads: status lives above the bots' heads |
+| `H` / `⌘\` | Hide every panel |
 | `S` | Settings |
-| `N` | Fly to the next bot waiting on you |
+| `N` | Fly to the next villager that waits for you |
 | `Enter` / `A` | Open / archive the selected thread |
-| `V` | Mark the selected thread viewed, so it stops asking |
-| `C` | New conversation in the open zone's folder |
+| `V` | Mark the selected thread viewed |
+| `C` | New conversation in the folder of the open zone |
 | `O` | Orbit mode |
-| `Tab` | Next planet |
+| `Tab` | Next setting |
 | `L` | Next time of day |
 | `M` | Mute |
 | `P` | Screenshot |
@@ -309,611 +244,142 @@ under **View → Return to isometric**.
 | `Esc` | Deselect, and close the zone sidebar |
 | `?` | Help |
 
-## Planets and light
+## Settings
 
-Twelve worlds and a full day/night cycle you can scrub, let run, or set to **Live**, which
-follows this machine's own clock so the colony's light matches the light out of your window.
+Every group folds. World and Time start open, the rest start shut, and the browser remembers
+which ones you open. Both themes show the same groups and rows, apart from Season and Zone
+tint, which only the village has.
 
-| World | What it is |
+| Group | What it holds |
 | --- | --- |
-| **Luna**, **Mars**, **Terra** | The originals: airless, rusty, earthlike |
-| **Shoreline** | Green ground, white sand, and the sea along one side |
-| **Archipelago** | An island the colony's own shape, a few more on the horizon, water everywhere else |
-| **Canopy** | Jungle: broad trees, parrots, butterflies, lakes in the hollows, fireflies after dark |
-| **Dune** | Sand seas in long wind-bent ridges, cacti, heat haze |
-| **Frost** | Snow, snow-dusted pines, frozen lakes, ravens |
-| **Harvest** | Autumn: gold light, red leaves on the air, a pond |
-| **Blossom** | Cherry trees in full bloom, petals on everything |
-| **Cinder** | Ash, embers, and lava pooling in every crater |
-| **Aerie** | A floating island, exactly the colony's shape, over a sea of cloud |
-
-A planet is a bag of colours and a few switches — terrain, scatter, sky, water, weather,
-wildlife, ambience and lighting all read from the same preset, so a thirteenth world is a data
-change rather than a code change. The one structural knob is `shape`: a handful of named
-ways of bending the same height field — `island` drops the ground into the sea past a
-radius, `coast` past a line, `dunes` lays ridges over everything. Worlds with water but no
-sea get their lakes for free: the crater bowls that were already there dip below the
-waterline and fill. On Cinder the water is lava, which is the same shader with a glow.
-
-Archipelago's coast is the colony's too: land is the hex footprint plus a beach, and the
-sea bed drops away past it, so claiming a tile pushes the waterline out and folding a repo
-away lets the water back in. The terrain is rebuilt when that happens.
-
-Aerie goes further: its ground exists only where the colony does. Every hex cell a
-repo holds gets a jagged plug of rock hung beneath it (`world/hexisland.js`) — a hex prism
-that twists and shrinks to a point, stalactites trailing below, the big ones under the
-middle of the island — and the terrain shader throws away every fragment more than a
-frayed grass margin from any cell. Claim a tile and the island grows a tile; fold a repo
-away and a chunk of rock drops off the edge. Vines hang from whichever edges face open sky.
-
-### Water
-
-Written from scratch rather than taken from a library, and built on `MeshPhysicalMaterial`
-through `onBeforeCompile` so it sits inside the scene's lighting — the sun and its shadow map,
-the sky-as-HDRI environment, fog, tone mapping, the world curve — for free. Gerstner swell
-in the vertex stage; turquoise shallows fading to deep blue, foam bands that breathe along
-every shore, sun sparkle pushed past the bloom threshold, and a moon sheen after dark.
-
-Nothing reads the depth buffer. How far the bottom is beneath the surface — which steers the
-colour ramp, the opacity and the foam — is baked per vertex from the terrain height field
-into an `aDepth` attribute when the plane is built, and costs nothing per frame. The price is
-that the shoreline is only as fine as the plane's vertex spacing, which the noise-wobbled
-foam edges hide.
-
-Anything can throw a ring on it: a fish landing, a gull skimming, a drone passing low. Rings
-are a small uniform array, so sixteen can be in flight for one draw call.
-
-
-### On a phone
-
-Below 600px the sidebar is a sheet along the bottom: it peeks its brand row and counts,
-and a tap or a drag on that row pulls it up over the colony. Opening a repo pulls it up;
-picking a bot drops it, and the thread card docks above the peek instead of chasing
-its bot round a screen that small. The rail becomes a strip along the top, settings
-and help fill the screen, everything keeps clear of the safe area, and a first run on a
-phone starts on the Low preset. One finger drags the ground, two pinch to zoom.
-`public/dev-mobile.html` (untracked) frames the app at phone size for checking this in a
-desktop browser.
-
-### Never getting stuck
-
-The rules the bots move by, which are the ones games settled on:
-
-- **Routes are planned on a grid rasterised with a small travel radius**, so the gaps
-  between buildings stay routes. A shoulder through a wall for a step is the price. When a
-  goal is unreachable or the search runs out, the route goes to the closest point reached
-  rather than nowhere — a straight line into a wall is how bots used to jam.
-- **Keep-out is for standing, not walking.** Every building, crate, boulder and scaffold
-  pole carries a keep radius (`navigation.js`), and a bot that has arrived is
-  pushed out of it and put back on it after every nudge. Walkers only collide with the grid.
-- **Separation only pushes sideways** while walking, and never harder than a lean. A shove
-  straight back is how a stream going one way cancels itself and mills on the spot.
-- **Ghosting.** A bot that gets nowhere for most of a second stops colliding with
-  the crowd for a couple of seconds, walks through it, and asks for a fresh route.
-- **The wobble check.** Every second, total motion is compared with net progress. Half a
-  metre of the one for none of the other is a glitch, whatever caused it: the bot is
-  moved to the nearest clear, uncrowded ground and left alone for a moment.
-- Whoever owns a leg — a wander, a spot round a building, a walk to a site — gives it up
-  after a second of no progress and picks somewhere else; a walk that creeps its last
-  metre for ten seconds counts as arrived.
-
-On a first load every bot comes out of the ship's airlock one at a time, the ones
-waiting on you first, and walks down the ramp to its site — a trickle over a minute or so,
-never a scrum at the foot of the ramp.
-
-### Checking on it
-
-A thread that is running hammers at its building, walks round it, and hammers from another
-side. Every half-minute or so it also stops, gets a folding phone out, flips it open, reads
-it for a few seconds — rows of text scrolling by on both panels — folds it shut and puts it
-away. The phone is the shape the folding iPhone is expected to be: a 4:3 slab that opens
-along its long edge into something wider than it is tall, with a pear on the back. It is
-one of what will be several such props; they live in `agents/props.js` and are picked per
-check, so more can be added and cycled without touching the bots.
-
-The pose is KayKit's idle with the left arm turned up to hold it, and the hammering is
-KayKit's hammering with the swing moved from the wrist to the shoulder. Both are done at
-bake time by `TWEAKS` in `agents/crew.js`: per clip, per bone, a `scale` on how far it
-strays from a reference keyframe and an `offset` Euler on top, optionally ramped in or out
-to make a raise or a lower. `window.__rebakeCrew(tweaks)` (dev only) bakes again with a
-different table, which is how the arm was posed: a small coordinate search over the six
-joint angles for a hand in front of the visor.
-
-### Wildlife
-
-Birds, butterflies, fish and the cargo drones — the life that carries no information, and is
-there so the world is never completely still. Each kind is one `InstancedMesh`, with the
-motion that is per-vertex (wing flap, rotor spin, tail wag) done in the vertex shader and only
-positions on the CPU. Birds and drones cast shadows, which is a surprising amount of the
-Animal Crossing feel: a shadow sliding across the deck before the bird crosses the frame.
-
-Birds are a boids-lite flock — gulls on the shore worlds, parrots in the jungle, crows over
-the desert and the snow, swallows over the meadows — and gulls dip to the water. Fish launch
-out of it on a ballistic arc every few seconds and ripple it on the way back in. Drones are
-the colony's own: they sit on a ring around the lander, pick an active site, fly a crate out,
-hover, drop it, and come home. They exist on every world.
-
-### Sound
-
-Off with `M`, on by default but silent until the first click — browsers insist. Three layers:
-
-- **Beds** per world, cross-faded when the planet changes, each with a day and a night gain.
-- **Events** on their own clocks: a gull every eight to twenty-five seconds, an owl at night,
-  distant thunder every couple of minutes. They run independently of the beds and of each
-  other, so the mix never settles into a loop you can learn.
-- **Positional sources**, the way a game engine does it. A site being hammered at, the lander's
-  hum, a drone going past, the lapping along the nearest stretch of shore — each is a
-  `PannerNode` with inverse-distance attenuation from the camera, so zooming in on a plot is
-  turning it up. At most ten voices at once, handed to the nearest sources with fades rather
-  than cuts.
-
-One sound is allowed to interrupt: a thread that has just started waiting on you gets two soft
-notes, once, from where its bot is standing.
-
-Every one of the forty sounds has a procedural fallback on the Web Audio API — filtered noise
-for wind and surf, FM glides for birdsong, blips for crickets — so the game is fully audible
-with no audio files at all. Real recordings override by name through
-`public/audio/manifest.json` ([how](public/audio/README.md)). Samples are gitignored: sample
-libraries license their sounds for use *in* a work, not for redistribution on their own.
-
-### The look
-
-Three things borrowed from Animal Crossing, all optional under **Look** in settings:
-
-- **The world curves away.** Ground ahead of the camera drops off with the square of how far
-  ahead it is, so the horizon bows and the colony reads as a small round world. It is done in
-  *world* space, keyed off the point the camera is looking at, rather than in view space the
-  way most curved-world shaders do it — because the shadow pass renders the same geometry
-  from the sun, and a bend expressed in the main camera's view space would put every shadow
-  somewhere its building is not. It is wired into every material at once by patching three's
-  own `project_vertex` chunk, so buildings, bots, terrain, scatter and water all bend without
-  knowing about it; the handful of shaders that project by hand (billboards, particles) call
-  the same function. Picking bends the same way on the CPU, so a far bot is clicked
-  where it was drawn.
-- **Cumulus** on the sky dome: the dome direction projected onto a flat sheet overhead — which
-  is what foreshortens clouds toward the horizon — with a second noise sample nudged toward
-  the sun for a lit side and a shaded underside. Drifts, and refreshes the environment map as
-  it goes.
-- **A colour grade** on the finished frame: a touch of saturation, a warm or cool cast per
-  world, lifted blacks with a little blue in them so shade reads as shade rather than as a
-  hole, a gentle S-curve, and a wide soft vignette.
-
-Weather is the same idea one level down: each world lists what drifts through its air —
-dust, pollen, petals, snow, embers, ash, leaves, sea spray, fireflies after dark — and the
-particle system spawns it in a ring around the camera.
-
-### The sky is the HDRI
-
-Rather than shipping an HDR environment map, the sky shader **is** the environment map. A
-second copy of the sky dome — sharing the same uniforms, so it is always the sky you are
-actually standing under — is rendered into a prefiltered radiance map with `PMREMGenerator`
-and bound as `scene.environment`. That is what gives metal something to reflect and
-dielectrics a directional ambient, and it is why the colony changes *character* through the
-day rather than just changing brightness: at dusk on Mars the panels pick up the sky, on the
-Moon they stay hard and neutral.
-
-It regenerates only when the sky has actually moved, and never more than a few times a second.
-Measured cost: **0.16 ms/frame**. Off on Potato and Low; the intensity is a slider.
-
-Materials are properly PBR underneath it. Roughness and metalness are looked up per atlas
-cell, so a single merged building geometry holds painted panel, brushed metal and
-photovoltaic glass and each behaves correctly — the ten building recipes never had to learn
-about PBR.
-
-### The sun is not overhead
-
-The solar arc is tilted, so noon puts the sun 54° above the horizon and off to one side rather
-than at the zenith. That is load-bearing rather than decorative: a sun directly overhead puts
-`N·L` at zero on every vertical wall in the colony, and they go black with only ambient to
-catch. The old procedural buildings were curved enough to hide it; a kit of flat-walled
-modules is not.
-
-### HDR and bloom
-
-Eye colours, lamps, windows, crop rows and plot kerbs are all authored above 1.0 so the bloom
-pass picks them out. The threshold is deliberately high (0.92) — only those things clear it,
-so lit surfaces stay crisp instead of going hazy.
-
-## Where the art comes from
-
-The colony is built out of two CC0 asset packs by **[Kay Lousberg](https://kaylousberg.com)**,
-plus the project's own shaders on top of them.
-
-| Pack | Used for | Licence |
-| --- | --- | --- |
-| [KayKit : Space Base Bits](https://kaylousberg.itch.io/space-base-bits) | Every building, the landing pads, rovers, and the crates and drums stacked around each plot | CC0 |
-| [KayKit : Character Animations](https://kaylousberg.itch.io/kaykit-character-animations) | The bots' bodies and all fifteen animation clips they play | CC0 |
-| [KayKit : Forest Nature Pack](https://kaylousberg.itch.io/kaykit-forest) | Terra's trees, bushes and grass, and the boulders on every world | CC0 |
-| [Kenney : Nature Kit](https://kenney.nl/assets/nature-kit) | Palms, cacti, pines, autumn and jungle canopies, cherry trees — everything the Forest pack does not have | CC0 |
-
-CC0 asks for nothing, but crediting Kay and Kenney costs nothing either. If you rebuild the
-assets, all the packs go in `assets-src/` (see below).
-
-Kenney's kit is built differently from KayKit's: rather than one gradient atlas that every
-model UVs into, each model carries two or three flat-colour materials as separate primitives.
-`tools/build-nature.mjs` bakes those colours into a vertex attribute and merges every model to
-one primitive under one material, so at runtime the kit behaves exactly like the atlased ones
-— one material per scatter recipe, `vertexColors` in place of `map`. Baking is also where a
-model can be packed twice under two palettes, which is how the same oak is a cherry tree and
-the same pine a snow-dusted one without a second pack.
-
-Two things about Space Base Bits make the whole approach work. It is **modular** — a habitat is
-a base module with a roof module on it, a workshop is the garage variant with a rover parked
-outside — which is why ten building recipes fit on one screen. And all forty-four models share
-**one 1024px gradient atlas**, so a nine-part greenhouse still merges to a single geometry and a
-single draw call, exactly as the procedural generators it replaced did.
-
-That atlas is an 8×4 grid of swatches, which turns out to be a useful thing to have. A *cell
-index* is a stable name for a material, so the building shader can:
-
-- **repaint one swatch into the repo's accent.** Kay's gold trim band is cell 11; the fragment
-  stage swaps its hue while keeping the swatch's own light-to-dark gradient, so every plot's
-  buildings wear that plot's colour with no extra material and no extra draw.
-- **light that same swatch after dark**, which is what makes the window strips come on at night.
-- **give one flat texture real PBR.** Roughness and metalness are looked up per cell, so the
-  grey structural swatch behaves like painted metal and the photovoltaic swatch like glass.
-
-The Forest pack does double duty. Its boulders are painted neutral grey, which means a
-per-instance tint takes exactly the same rock to lunar dust or Martian rust without touching
-the atlas — so one scatter recipe dresses a meadow and a crater field. Only sixteen of its 105
-models are packed: variety comes from per-instance scale and rotation, and packing every size
-and colour variant would be five times the file for no more to look at.
-
-### The surfaces are drawn, not shipped
-
-The plot decks and their kerbs can't be textures from a pack, because they have to take each
-repo's accent colour and a painted texture cannot. `world/surfaces.js` draws them to a canvas
-at boot instead — a plated metal floor of bolted panels, and a kerb broken into dashes that
-reads as runway edge lighting rather than a glowing bar. Both are authored neutral grey so the
-material's colour multiplies through cleanly, and both come with a **normal map derived from
-their own height field** by Sobel. That relief is doing most of the work: on a surface this
-large and this flat, a flat albedo pattern under one directional light reads as wallpaper,
-where a seam that catches a shadow along one edge and a highlight along the other reads as
-metal.
-
-Both surfaces needed their UVs rebuilt, and both for the same underlying reason: a generated
-primitive's unwrap is made for the primitive, not for what you draw on it.
-
-A hex tile is a six-sided cylinder, and a cylinder's cap UVs are a *disc* — which turns a tiling
-plate pattern into a medallion, one per tile. The deck's **top** is therefore reprojected from
-world XZ, so the seams run straight across a whole plot and seven cells read as one apron. Its
-**rim** keeps the cylinder's own side unwrap, which is the one thing that works: a fixed
-horizontal axis like `x + z` is *constant* along two of every six sides, leaving those faces
-with no UV gradient, a degenerate tangent and — since three builds the normal-mapped shading
-frame out of that — solid black; and arc length from `atan2` fixes the gradient but adds a seam
-where the wrap crushes a dozen repeats into one panel. The generated unwrap has neither problem,
-because it duplicates the vertices at the seam.
-
-A kerb bar is a box, and a box hands all six faces the same 0..1 square, so the dash strip was
-stretched down the sides and across the ends as well — which on a bar 14cm tall squashed the
-dark gaps between dashes into what read as a solid black edge, worst where six of them gather at
-a plot corner. Only the upper face points at the strip now; the rest point at a patch of flat
-colour on the same texture.
-
-### Rebuilding them
-
-`npm run assets` packs the raw packs into the two glbs the app loads. The built files are
-checked in and the raw packs are not, so this is a no-op unless you have fetched them:
-
-```bash
-mkdir -p assets-src && cd assets-src
-# download the FREE tier of the KayKit packs and Kenney's Nature Kit from the links above,
-# then unzip in place (kenney_nature-kit/Models/GLTF format/ is what the packer reads)
-```
-
-`npm run assets` runs `tools/build-assets.mjs`, which drives `build-kit.mjs` once per model
-pack — merging a directory of single-model `.gltf` files into one document with one material
-and one texture — and then `build-crew.mjs`. That last one keeps the fifteen clips the colony actually plays out of
-KayKit's 161 and — the part that matters — **retargets every animation channel onto the
-mannequin's own bones**. Merging glTF documents brings each animation file's private copy of the
-rig along with it, so without that step the finished file has five skeletons named `hips` and
-the clips drive the four nobody is looking at. It loads without a single warning and renders the
-every bot frozen in its bind pose.
-
-## Animating the bots
-
-The bodies are hand-animated clips, and hand-animated clips are not instanceable: three skins a
-`SkinnedMesh` from a `Skeleton` object, one per character, which for three hundred threads means
-three hundred draw calls and three hundred skeletons stepped on the CPU every frame.
-
-So the animation is **baked once, at load, into a bone-matrix texture**. Every clip is sampled at
-30 fps and each frame's twenty-one skinning matrices are written into a float texture — 84×723
-texels for the whole set. One `InstancedMesh` then carries every bot, and each bot
-reads its own row of that texture from a single per-instance float: the frame it is on. Skinning
-happens in the vertex shader, upstream of three's own instancing, so the skinned vertex still
-goes through `instanceMatrix` and the bots stay one draw whether there are six of them or six
-hundred.
-
-Everything a bot *wears* stays procedural and stays the colony's own: helmet, visor,
-screen-face, backpack, antenna and lamp. Those are pinned to bones the cheap way — the bake also
-writes the head and chest world transforms into a small array on the CPU, so placing a helmet is
-one matrix read rather than a skeleton evaluation, and a helmet can never be a frame out of step
-with the head under it.
-
-Behaviour maps onto clips directly, and locomotion wins over status — an idler pottering across
-its plot walks rather than hammering while it slides:
-
-| Behaviour | Clip |
-| --- | --- |
-| Running now | `Hammering` |
-| Waiting on you | `Waving` |
-| Errored | `Hit_A` |
-| PR merged | `Cheering` |
-| Nothing for three days | `Sit_Floor_Down` → `Sit_Floor_Idle`, and then it holds still |
-| Anything else | `Idle_A`, or `Walking_A` / `Running_A` while moving |
-
-The clip is chosen from the distance a bot **actually covered** last frame, not from
-the velocity it meant to have. The two come apart the moment something is in the way:
-collision refuses the step while velocity stays high, and an agent driven off intent alone
-walks on the spot against a wall. The measure rises instantly and falls over a tenth of a
-second — so setting off is caught on the frame it happens and nothing ever slides in a
-standing pose, while a stride still gets to finish instead of freezing mid-step.
-
-Movement is shaped to match. A wander leg is walked at a decisive pace and stops dead on
-arrival rather than easing down through the speeds no standing clip can carry, and a leg that
-runs into the side of a building is abandoned at the first refused step. Measured across a
-live colony over a minute: **0.4% of agent-frames** disagree with what the body is doing, none
-of them by more than 0.12 m/s.
-
-Stride playback follows actual ground speed, so short steps cannot moonwalk. An *idler*
-potters around its plot; a *sleeper* does not — it sits where it sat, and the only thing that
-can move it is being pushed out of someone it is overlapping, which converges and stops. The
-alternative is a cross-legged bot sliding across the deck, standing up to walk two
-metres, and sitting down again every few seconds.
-
-Clips that do not loop are baked a millisecond short of their own duration. Sampled at exactly
-`duration` the mixer's default loop mode wraps to the start, so the frame a sit-down or a spawn
-*holds* would be the pose it began from — and the bot snaps upright on the last frame of
-sitting down.
-
-Bots also stand on the ground rather than on `y = 0`. A plot's tiles are a raised slab
-and the terrain between plots rolls half a metre either way, so a fixed height buries them for
-a good part of the colony. `Colony.groundAt()` answers with the deck height when a point is
-over an allocated hex cell — an exact axial lookup, not a nearest-centre radius test — and the
-terrain field otherwise. It is sampled only when a bot has actually moved, and eased
-into, so walking up onto a deck reads as a step rather than a teleport.
-
-## Performance
-
-Five presets from **Potato** to **Ultra**, and every knob underneath them is individually
-adjustable. A dot next to a setting means you have moved it away from its preset.
-
-The knobs that actually matter, and why:
-
-- **Render scale** is the biggest lever there is. The drawing buffer is sized directly rather
-  than through `setPixelRatio`, which cannot usefully go below 1 on a retina panel. It is a
-  share of *your display's own resolution*, so 100% is native on a retina panel and native on
-  a 1× one. Reading it as CSS pixels — which is what it used to do — quietly rendered every
-  retina machine at half resolution, and the first place that shows is the small stuff that
-  holds a constant size on screen: the badge glyphs and the zone name plates, which magnify
-  hardest exactly when you lean in to read them.
-- **Adaptive quality** watches the frame time and quietly scales *under* whatever you chose,
-  one step per second — a governor that reacts per frame makes the resolution visibly breathe.
-  Its floor is relative too: half of what your display can show, not half a CSS pixel.
-- **HDR + bloom** off doesn't just skip the pass, it disposes the composer's float render
-  targets. Turning it off on a weak machine gives the memory back.
-- **Shadows** track the camera rather than covering the whole colony, which is worth roughly a
-  doubling of effective resolution.
-
-What keeps it cheap at rest:
-
-- The bots' animated bodies are a single instanced, GPU-skinned draw, and each worn part —
-  helmet, visor, face, pack, antenna, lamp — is one `InstancedMesh` across every bot. The
-  sixty-fifth bot costs a matrix write and one float, not a draw call. Per-agent suit
-  colour, eye colour and facial expression ride along as instanced attributes.
-  Measured on a live colony: **66 bots and 66 buildings in 105 draw calls**.
-- Each building merges into a single geometry, and construction progress is a shader offset
-  rather than a rebuild, so a building rises out of the ground without touching a vertex
-  buffer. It sinks the structure and discards what falls below the deck rather than slicing
-  the top off, so a half-built one is a *whole* building partly buried — cutting instead
-  guts a kit of closed shells, and a two-thirds-finished biodome becomes an empty ring.
-- Terrain is displaced and vertex-coloured once at build time; the GPU only ever sees static
-  geometry.
-- Particles live in flat typed arrays and are swap-removed on death — no allocation during play.
-
-### Things that hold their size on screen
-
-Badges and name plates are deliberately near-constant on screen, which inverts the usual
-texture problem: they are *minified* when you pull the camera out and *magnified* when you
-lean in, and the close end is the one that hurts. Both are sized for the closest you can
-get — the badge atlas gives each glyph a 128×256 cell, a plate is drawn at 4× — so at the
-tightest zoom on a retina panel there is still about one texel per device pixel, and mipmaps
-plus anisotropy carry the far end where a plate is sixty pixels tall and would otherwise
-crawl. Everything in both is drawn from paths, so the only cost of more texels is memory.
-
-## The faces
-
-Each visor is a little rounded screen — the patch is a rectangle in UV space, so its rounded
-silhouette is cut in the fragment shader with a rounded-box SDF, which gives soft corners a
-rectangular patch can never have and lets the white helmet show through where the screen ends. All sixteen expressions are drawn once into a single 4×4
-canvas atlas as a white-on-black **mask** — never as finished artwork — and the colour arrives
-per-bot at draw time, so one 512px texture gives every agent its own eye colour without
-a second byte of memory. The shader reads the mask out of the red channel, blends between the
-dark screen and that bot's glow, and adds scanlines and a vignette so it reads as a
-screen rather than a decal.
-
-They blink on their own clocks, so a crowd never blinks in unison.
-
-## A note on which side gets drawn
-
-The ship is procedural, and its bowls, engine bells and airlock collars are **open shells**.
-Two things bite there: single-sided rendering lets you look straight through them, and a
-one-sided bowl cannot shadow-map — from the sun its concave interior is a back face at exactly
-its own depth, so it self-shadows to solid black whichever cull mode the depth pass uses. So
-the ship draws double-sided with a `BackSide` shadow side.
-
-The buildings want the exact opposite, and for the exact opposite reason. The model kit's
-pieces are **closed solids**, so there is nothing to see through — and being closed is why they
-must not be drawn double-sided. They are modelled as stacked boxes, which leaves a floor and
-the ceiling underneath it sharing a plane all over the kit: a landing pad and the lander
-standing on it put 38 up-facing and 17 down-facing triangles at one height, and a habitat has
-two such planes, a lab four. Drawn double-sided, both halves of every one of those pairs
-rasterise at identical depth and the winner is settled by floating-point noise — which is a
-whole colony of surfaces flickering as the camera moves. Back-face culling throws the downward
-half away before it can fight, so buildings render `FrontSide`.
-
-Worth knowing if you add a kit: the tell is that *every* clash is an up/down pair. Not one is
-up/up, which is what makes culling a complete fix rather than a partial one.
-
-## Turning things
-
-Turbine rotors spin in the **vertex shader**, not as child meshes, so a turbine is still one
-merged geometry and one draw call. Each spinning vertex carries the hub it turns about and how
-fast, which is what lets one building hold several of them, and one uniform write a frame turns
-every rotor in the colony. The tower is taken from the kit *solo* — without the sub-node the
-pack names separately — precisely so the rotor can be put back on as a part that moves.
-
-Two things to watch if you add another: `BufferGeometry.scale()` transforms position and normal
-and nothing else, so an attribute that holds a *position* has to be scaled by hand or the blades
-orbit a hub left behind at the unscaled height. And the shadow pass needs the same rotation, or
-the blade's shadow lags the blade.
+| **World** | Theme, the setting (each theme's own list of worlds, in groups: the colony's twelve, the village's six) and, in the village, Season |
+| **Time** | Live (follows your clock), time of day, cycle length |
+| **Repos** | Active repos only, Fade ghost towns, *Fade after*, *Hide after*, and Zone size: buildings per tile, which threads get a building |
+| **Threads** | Where Resume and New conversation take you: a VS Code window, the desktop app, or a copied command |
+| **Look** | Exposure, bloom, environment light, tilt-shift, field of view, labels and, in the village, zone tint |
+| **Atmosphere** | World curve, contact shading, colour grade, clouds, wildlife |
+| **Sound** | Ambient sound and its volumes |
+| **View** | Follow the selected villager, return to isometric, reduced motion, show FPS |
+| **Quality** | Presets from Potato to Ultra, plus render scale, adaptive quality and the rest. A dot marks a setting moved off its preset |
+
+The space theme keeps everything that Bot Crossing ships: 12 worlds, water, wildlife, sound and
+its own look. How the engine works (the navigation, the animation baking, the sky and the
+shaders) is written up in the [Bot Crossing README](https://github.com/Station-Sciences/bot-crossing#readme).
 
 ## Keeping it local
 
-The server reads your agent transcripts and can ask the OS to open things, which makes it a
-more interesting target than a localhost toy usually is. Three things hold it in:
+The server reads your agent transcripts and can ask the operating system to open things. Three
+protections hold it in:
 
-- **It binds `127.0.0.1`.** Nothing outside the machine can reach it, unless you deliberately
-  change that — see below.
-- **It checks `Host`.** Binding to loopback is not on its own enough. An attacker who points
-  a domain they control at `127.0.0.1` — DNS rebinding — reaches the server *as a same-origin
-  page* and can then read every reply. Those requests still arrive carrying
-  `Host: their-domain`, and are refused.
-- **It checks `Origin`.** A cross-site `fetch` with a `text/plain` body is not preflighted, so
-  without this any page you happened to have open could POST here — spawning sessions, opening
-  Finder windows, or overwriting the colony layout — even while unable to read the response.
-  Requests from anywhere but this server's own page are refused.
+- **It binds `127.0.0.1`.** Nothing outside the machine can reach it unless you change that.
+- **It checks `Host`.** A request whose `Host` is not the server's own is refused. That stops DNS
+  rebinding, where a domain that an attacker controls points at `127.0.0.1`.
+- **It checks `Origin`.** Only this page, on this host and port, can POST or PUT. A request that
+  the browser marks cross-site is refused, and a body that is not `application/json` gets a 415.
 
-The practical cost: a bare `curl` POST is refused too, since browsers always send `Origin` on
-POST and its absence means the caller is not the page. Add `-H 'Origin: http://localhost:5274'`
-if you are scripting against the API.
+A bare `curl` POST is refused too. To script against the API, add
+`-H 'Origin: http://localhost:5274' -H 'Content-Type: application/json'`.
+
+What Taskshire touches on disk, in full:
+
+| | |
+| --- | --- |
+| Reads | The session records and transcripts of your harnesses |
+| Writes | `data/colony.json`, and nothing else, anywhere |
+| Sends | Nothing. No network calls, no telemetry, no account |
+
+`data/colony.json` holds the names and paths of your repos, so git ignores it. Look through it
+before you paste it into an issue.
 
 ### Serving it to your network
 
-`BOT_CROSSING_HOST` changes what `npm run serve` binds to, so you can watch the colony from a
-tablet on the sofa:
+Taskshire always runs on the computer that has your agent threads. A phone or a tablet is only a
+second screen: it opens the page from that computer over your network. Below 600px wide, the
+sidebar becomes a sheet along the bottom of the screen.
 
-```bash
-BOT_CROSSING_HOST=0.0.0.0 npm start
-```
+**WARNING:** Anyone who can reach the port sees every thread title, first prompt, working
+directory and branch, and can open threads and start sessions on your computer. There is no
+password. Do this only on a network that you own, never on public wifi.
 
-**Understand what that hands out before you do it.** The two checks above stop a *web page* from
-driving the server; they are not access control, and they do nothing about another device asking
-directly. Anyone who can reach the port gets every thread title, every opening prompt, every
-working directory and branch — a fairly complete picture of what you have been working on — plus
-the ability to open threads, reveal folders and start sessions on your machine. There is no
-password, because there was never meant to be anything to guard.
+1. On the computer, start the server on every interface:
 
-Fine on a network you own. Not something to leave running on café wifi, and worth remembering
-that a machine on a VPN or a mesh network is reachable by everything else on it too.
+   ```bash
+   BOT_CROSSING_HOST=0.0.0.0 npm start
+   ```
+
+2. On the phone, open `http://<the computer's local IP>:5274`.
+
+`npm run dev -- --host` does the same for the dev server.
 
 ### Picking the terminal
 
-`BOT_CROSSING_TERMINAL` names the emulator a thread opens in, ahead of `$TERMINAL` and whatever the desktop has:
+When a thread opens in a terminal, `BOT_CROSSING_TERMINAL` picks which one, ahead of `$TERMINAL`:
 
 ```bash
 BOT_CROSSING_TERMINAL=kitty npm start
 ```
 
-A name on `PATH` or an absolute path, and it has to be one whose flags are known — gnome-terminal, konsole, kitty, alacritty, ghostty, wezterm, foot, xterm and their relatives — since one that is not is skipped rather than guessed at.
-On macOS only a named terminal works; point it at a real binary rather than an `.app`.
-Windows is not supported yet.
+It takes a name on `PATH` or an absolute path, for a terminal whose flags Taskshire knows:
+gnome-terminal, konsole, kitty, alacritty, ghostty, wezterm, foot, xterm and their relatives. On
+macOS, only a named terminal works; point it at a real binary, not an `.app`. Windows does not
+support it yet.
 
-What it touches on disk, in full:
-
-| | |
-| --- | --- |
-| Reads | Your harness's own session records and transcripts |
-| Writes | `data/colony.json`, and **one** `isArchived` field per archived thread |
-| Sends | Nothing. No network calls, no telemetry, no account |
-
-`data/colony.json` holds the names and paths of the repos you work in, so it is gitignored —
-worth knowing before you copy one into an issue.
 
 ## Layout
 
 ```
-server/
+server/        the API and the static server
   harnesses/   one adapter per agent harness — README.md is the contract
-    index.mjs    the registry: add your harness to the list here
-    claude-code.mjs
-  lib/         filesystem helpers the adapters share
-  scan.mjs     harness-agnostic: asks every detected harness, merges, sorts
-  api.mjs      /api/threads, /api/harnesses, /api/state, /api/open, /api/archive,
-               /api/new-session, /api/reveal
-  serve.mjs    static server for the built app
 src/
-  core/        settings, renderer + post chain + colour grade, the Google Earth camera,
-               the world-curve shader patch
-  world/       planets, terrain, sky and clouds, water, wildlife, hex plots, the model
-               kits, buildings, the ship
-  agents/      the crew rig and its bake, instanced bots, faces, badges, particles
-  audio/       the ambience engine, the sound registry, the synths
+  core/        settings, renderer, camera
+  world/       terrain, sky, water, zones, buildings
+  agents/      the villagers and bots, their animation, faces and badges
   game/        threads → colony, and the API client
   ui/          the HUD
-tools/         asset packers — raw packs in, the four glbs the app loads out
-public/assets/ spacebase.glb, crew.glb, forest.glb, nature.glb
-public/audio/  optional sound samples + manifest.json (gitignored; see its README)
+  themes/      one directory per theme: space/ and medieval/
+tools/         asset packers, kit validator and inspector, the screenshot and smoke harnesses
+public/assets/ the packed art, one directory per theme
 ```
 
-Everything that knows what a *particular* harness's files look like lives in
-`server/harnesses/`. Everything else — the scanner, the API, the whole of `src/` — is written
-against the thread shape and never against a harness.
-
-Colony state lives in `data/colony.json` — where each zone sits and what you archived.
-Deleting it only loses the archive list and the map's arrangement; the threads themselves are
-untouched, and the colony lays itself out again from scratch.
-
-## Building your own
-
-Bot Crossing is one shape this idea can take. `.claude/skills/agent-session-world/` is a skill for
-building the others — fish in a reef, animals in a forest, villagers, ants, boats in a harbour.
-Whatever inhabits it, the structure underneath is the same: a layout that stays put so you can
-learn the map, one draw call for the whole crowd, a single source of truth for what a thread is
-doing, and a camera with weight.
-
-It is written to take somebody's idea and fill in the frame around it, rather than to reproduce
-this particular colony. Four reference files carry the detail, and stand on their own whether or
-not you build anything like this:
-
-- [making it feel alive](.claude/skills/agent-session-world/references/making-it-feel-alive.md) —
-  ambience and interaction, written to translate into any metaphor
-- [rendering traps](.claude/skills/agent-session-world/references/rendering-traps.md) — the
-  graphics problems in roughly the order you meet them
-- [harness adapters](.claude/skills/agent-session-world/references/harness-adapters.md) — reading a
-  coding agent's sessions without disturbing them
-- [asset pipeline](.claude/skills/agent-session-world/references/asset-pipeline.md) — decent art
-  without an artist
+Everything that knows how a *particular* harness stores its files lives in `server/harnesses/`.
+Everything that knows how a *particular* theme looks lives in `src/themes/`. The rest of the code
+knows neither.
 
 ## Who made this
 
-Built by **[Jarren Rocks](https://jarren.rocks)**, mostly as a side effect of building
-**[Emra](https://emra.app)** — which is where most of the threads in the screenshots come from,
-and why a tool for keeping track of a lot of them at once existed in the first place.
+**Bot Crossing** is by **[Jarren Rocks](https://jarren.rocks)**.
+The engine, the space colony and the harness adapters are his.
+
+**Taskshire**, the medieval village and the fork's additions listed at the top, is by
+**[MoreCowwbell](https://github.com/MoreCowwbell)**.
 
 ## Licence
 
-[MIT](LICENSE) © Jarren Rocks. Do what you like with it — including forking it, which
-[CONTRIBUTING.md](CONTRIBUTING.md) explains is a first-class option rather than a last resort.
+Everything in this repository is free to use, change and share, code and art alike.
 
-The art is not mine. Three CC0 packs by **[Kay Lousberg](https://kaylousberg.com)** — [Space
-Base Bits](https://kaylousberg.itch.io/space-base-bits), [Character
-Animations](https://kaylousberg.itch.io/kaykit-character-animations) and [Forest Nature
-Pack](https://kaylousberg.itch.io/kaykit-forest) — and **[Kenney](https://kenney.nl)**'s
-[Nature Kit](https://kenney.nl/assets/nature-kit) are built into the `.glb` files in
-`public/assets/` and are covered by [CC0](https://creativecommons.org/publicdomain/zero/1.0/),
-not by the MIT licence above. CC0 asks for nothing; crediting them costs nothing either.
+- **Code:** [MIT](LICENSE), © 2026 Jarren Rocks, with the fork's modifications © 2026
+  MoreCowwbell under the same licence.
+- **Art made by the project** (the shaders, terrain, sky, water, the ship, the helmets and faces
+  of the bots, the zone decks, and every synthesised sound): MIT, with the code.
+- **Packed art** in `public/assets/`: [CC0](https://creativecommons.org/publicdomain/zero/1.0/),
+  from five packs by **[Kay Lousberg](https://kaylousberg.com)** —
+  [Space Base Bits](https://kaylousberg.itch.io/space-base-bits),
+  [Character Animations](https://kaylousberg.itch.io/kaykit-character-animations),
+  [Forest Nature Pack](https://kaylousberg.itch.io/kaykit-forest),
+  [Medieval Hexagon Pack](https://kaylousberg.itch.io/kaykit-medieval-hexagon) and
+  [Adventurers](https://kaylousberg.itch.io/kaykit-adventurers) — and **[Kenney](https://kenney.nl)**'s
+  [Nature Kit](https://kenney.nl/assets/nature-kit). Each theme's packs are listed in
+  `public/assets/<theme>/CREDITS.md`.
+- **Status badges:** [Material Design Icons](https://pictogrammers.com/library/mdi/), bundled
+  through `@mdi/js`, licensed [Apache-2.0](https://github.com/Templarian/MaterialDesign/blob/master/LICENSE).
 
-The status badges above each bot's head are
-[Material Design Icons](https://pictogrammers.com/library/mdi/), bundled via `@mdi/js` and
-licensed [Apache-2.0](https://github.com/Templarian/MaterialDesign/blob/master/LICENSE).
+CC0 asks for nothing in return, but we strongly encourage you to support Kay. His packs can be found at
+[Kaykit Collection](https://kaylousberg.itch.io), and he has a [Patreon](https://www.patreon.com/kaylousberg).
 
-Everything else you see and hear — the shaders, the terrain, the sky and its clouds, the water,
-the birds and drones, the ship, the bots' helmets and faces, the plot decks and their kerbs,
-and every synthesised sound — is made by this project and is MIT along with the code.
+**What MIT does not cover.** Jarren Rocks own the name *Bot Crossing*, and new
+designs of the Bot Crossing crew character made after 16 September 2026. You can fork and change the code, including the code that draws the bots. You cannot name a fork "Bot Crossing",
+use the crew character as the mascot or logo of another product, or sell goods that show the
+character. [TRADEMARKS.md](TRADEMARKS.md) has the details. Nothing in here is to be considered legal advices.
 
-Two things sit outside that: the name **Bot Crossing**, and character design work from here on.
-Everything in the repository today stays MIT; new designs, models and physical forms of the bots
-do not. The code that draws the bots stays MIT either way — see [TRADEMARKS.md](TRADEMARKS.md).
-
-Not affiliated with Anthropic, OpenAI, Google, or any of the other harness vendors listed above.
+Taskshire is not affiliated with Anthropic, OpenAI, Google, or any other harness vendor listed
+above.

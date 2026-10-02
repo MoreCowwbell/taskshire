@@ -206,67 +206,9 @@ test('an absent Codex is simply not detected', async () => {
 })
 
 // ── subagents ─────────────────────────────────────────────────────────────────
-
-/**
- * A Claude Code home with one live CLI session and one subagent under it. The pid is this
- * process's own, which is the only pid a test can be sure is alive when the scan probes it.
- */
-async function fakeClaudeWithErrands(errandRecords) {
-  const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'claude-home-'))
-  const session = '11111111-2222-4333-8444-555555555555'
-  const project = path.join(home, '.claude', 'projects', '-tmp-demo')
-  await fsp.mkdir(path.join(project, session, 'subagents'), { recursive: true })
-  await fsp.mkdir(path.join(home, '.claude', 'sessions'), { recursive: true })
-  await fsp.writeFile(
-    path.join(project, `${session}.jsonl`),
-    `${JSON.stringify({ type: 'user', cwd: '/tmp/demo', message: { content: 'build the thing' } })}\n`
-  )
-  await fsp.writeFile(
-    path.join(home, '.claude', 'sessions', `${process.pid}.json`),
-    JSON.stringify({ pid: process.pid, sessionId: session, cwd: '/tmp/demo', status: 'busy' })
-  )
-  await fsp.writeFile(
-    path.join(project, session, 'subagents', 'agent-abc.jsonl'),
-    errandRecords.map((r) => `${JSON.stringify(r)}\n`).join('')
-  )
-  return home
-}
-
-async function claudeWithErrands(home) {
-  process.env.HOME = home
-  const mod = await import(`../server/harnesses/claude-code.mjs?${home}`)
-  return mod.default
-}
-
-const midTurn = { type: 'assistant', message: { content: [{ type: 'tool_use' }], stop_reason: 'tool_use' } }
-
-test('a running subagent is reported with the brief it was given, however long that is', async () => {
-  const realHome = process.env.HOME
-  // Longer than any head this could reasonably read at once: a brief that is truncated away
-  // yields no task at all, because readHead drops the line it lands in the middle of.
-  const brief = `repair the raster pipeline ${'x'.repeat(20 * 1024)}`
-  const home = await fakeClaudeWithErrands([{ type: 'user', message: { content: brief } }, midTurn])
-  const h = await claudeWithErrands(home)
-  const [thread] = await h.scanThreads()
-  assert.equal(thread.subagents?.length, 1)
-  assert.equal(thread.subagents[0].id, 'agent-abc')
-  assert.match(thread.subagents[0].task, /^repair the raster pipeline/)
-  process.env.HOME = realHome
-  await fsp.rm(home, { recursive: true, force: true })
-})
-
-test('a subagent that has handed its answer back is finished, however recently it wrote', async () => {
-  const realHome = process.env.HOME
-  const home = await fakeClaudeWithErrands([
-    { type: 'user', message: { content: 'summarise the diff' } },
-    { type: 'assistant', message: { content: [{ type: 'text', text: 'here it is' }], stop_reason: 'end_turn' } },
-  ])
-  const h = await claudeWithErrands(home)
-  const [thread] = await h.scanThreads()
-  assert.equal(thread.subagents, undefined, 'a finished errand is not an astronaut on the map')
-  process.env.HOME = realHome
-  await fsp.rm(home, { recursive: true, force: true })
-})
+// Upstream's two errand cases (030f008) lived here. This fork keeps its own subagent scan —
+// meta-file based, `{ id, name, agentType, description, model, startedAt }`, teammates alive
+// between turns — tested in `tests/server/claude-code.test.mjs`.
 
 // ── shared helpers ────────────────────────────────────────────────────────────
 
@@ -352,6 +294,79 @@ test('Cursor offers a folder link but never a per-thread one it cannot honour', 
   assert.equal(schemeOf(opened.url), 'cursor')
   assert.ok(opened.url.includes('%20'), 'a space in the path is escaped, not left raw')
   assert.equal(h.newSession('relative/path').ok, false)
+  await fsp.rm(home, { recursive: true, force: true })
+})
+
+test('a Windows folder opens in Cursor, drive letter and all', async () => {
+  // Upstream tested `startsWith('/')`, which no Windows path passes, so the whole platform got
+  // "not somewhere Cursor can open" for every folder on it. The drive's colon stays bare: a
+  // percent-escaped one is not a drive to whatever resolves the URL.
+  const home = await fakeCursor('tmp', [askedFor('<user_query>hi</user_query>')])
+  const h = await cursorWith(home)
+  const win = h.newSession('C:\\Users\\x\\my repo')
+  assert.equal(win.ok, true)
+  assert.equal(win.url, 'cursor://file/C:/Users/x/my%20repo')
+  assert.equal(h.newSession('C:/Users/x').ok, true, 'already slashed is the same path')
+  assert.equal(h.newSession('relative\\path').ok, false, 'relative is still refused, either flavour')
+  await fsp.rm(home, { recursive: true, force: true })
+})
+
+test('a Codex thread carries its folder and the command that reopens it', async () => {
+  const home = await fakeCodex([
+    line('session_meta', { id: SESSION_ID, cwd: '/tmp/demo', git: { branch: 'main' } }),
+    line('response_item', { type: 'message', role: 'user', content: [{ text: 'ship the thing' }] }),
+    line('event_msg', { type: 'task_complete' }),
+  ])
+  const h = await scanWith(home)
+  const [t] = await h.scanThreads()
+
+  // The folder rides inside `ref` because that is all `/api/open` is given, and matching an
+  // editor window to a thread needs the folder the thread ran in.
+  assert.deepEqual(t.ref, { sessionId: SESSION_ID, cwd: '/tmp/demo' })
+  assert.equal(t.resume, `codex resume ${SESSION_ID}`)
+  assert.equal((await h.openThread(t.ref)).ok, true, 'the deep link still works off the same ref')
+  await fsp.rm(home, { recursive: true, force: true })
+})
+
+test('a Codex recap is the first ask and the last answer', async () => {
+  const home = await fakeCodex([
+    line('session_meta', { id: SESSION_ID, cwd: '/tmp/demo' }),
+    line('response_item', { type: 'message', role: 'user', content: [{ text: 'ship the thing' }] }),
+    line('response_item', { type: 'message', role: 'assistant', content: [{ text: 'first pass done' }] }),
+    line('response_item', { type: 'function_call', name: 'shell', arguments: '{}' }),
+    line('response_item', { type: 'message', role: 'assistant', content: [{ text: 'Shipped, tests green.' }] }),
+    line('event_msg', { type: 'task_complete' }),
+  ])
+  const h = await scanWith(home)
+  const [t] = await h.scanThreads()
+
+  assert.deepEqual(await h.recap(t.ref), { first: 'ship the thing', last: 'Shipped, tests green.' })
+  await fsp.rm(home, { recursive: true, force: true })
+})
+
+test('a Codex recap survives an aborted turn and a malformed line', async () => {
+  const home = await fakeCodex([
+    line('session_meta', { id: SESSION_ID, cwd: '/tmp/demo' }),
+    '{"half": ',
+    line('response_item', { type: 'message', role: 'user', content: 'what now' }),
+    line('response_item', { type: 'message', role: 'assistant', content: [{ text: 'Working on it' }] }),
+    line('event_msg', { type: 'turn_aborted' }),
+  ])
+  const h = await scanWith(home)
+
+  const got = await h.recap({ sessionId: SESSION_ID })
+  assert.equal(got.first, 'what now')
+  assert.equal(got.last, 'Working on it', 'escape is not the end of what the agent said')
+  await fsp.rm(home, { recursive: true, force: true })
+})
+
+test('a Codex recap for an id nothing answers to is empty, not a throw', async () => {
+  const home = await fakeCodex([line('session_meta', { id: SESSION_ID, cwd: '/tmp/demo' })])
+  const h = await scanWith(home)
+
+  assert.deepEqual(await h.recap({ sessionId: 'not-a-uuid' }), { first: '', last: '' })
+  assert.deepEqual(await h.recap({}), { first: '', last: '' })
+  assert.deepEqual(await h.recap({ sessionId: '11111111-2222-3333-4444-555555555555' }), { first: '', last: '' })
   await fsp.rm(home, { recursive: true, force: true })
 })
 
@@ -675,6 +690,21 @@ test('a record the app still holds outranks a leftover deletion marker', async (
   assert.equal(t.source, 'desktop')
   assert.equal(t.title, 'Back again')
   assert.equal(t.archived, false, 'a record that exists is the newer truth')
+  await fsp.rm(fx.root, { recursive: true, force: true })
+})
+
+test('a deleted thread resumed from the CLI is live, not archived', async () => {
+  // `claude --resume <id>` keeps the id, so the app's marker stays behind with no record to outrank it.
+  const fx = await fakeClaude({ transcript: [typed('back from the bin')], deleted: [SESSION_ID] })
+  const sessions = path.join(fx.configDir, 'sessions')
+  await fsp.mkdir(sessions, { recursive: true })
+  // This test's own pid: alive for as long as the scan runs, which is all the registry checks.
+  const entry = { sessionId: SESSION_ID, pid: process.pid, status: 'busy' }
+  await fsp.writeFile(path.join(sessions, `${process.pid}.json`), JSON.stringify(entry))
+  const h = await claudeWith(fx)
+  const [t] = await h.scanThreads()
+  assert.equal(t.archived, false, 'a live process is newer truth than the marker')
+  assert.equal(t.state, 'active', 'so the running session stays on the map')
   await fsp.rm(fx.root, { recursive: true, force: true })
 })
 

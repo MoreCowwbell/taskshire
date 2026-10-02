@@ -5,12 +5,16 @@
  * handles well and cheaply: buildings and the ship are rasterised into a blocked bitmap
  * whenever the roster changes, and agents route across it with A*.
  *
- * There are two independent guarantees here, and both matter:
+ * There are three independent guarantees here, and all of them matter:
  *
  * 1. **Routing** — A* finds a way around a building rather than through it, including
  *    threading the gaps between a ring of them. Paths are string-pulled afterwards so an
  *    astronaut walks a straight line where it can rather than a visible staircase.
- * 2. **Collision** — `slide()` is applied to every step regardless of whether the agent is
+ * 2. **Reachability** — `setSeed` floods the open cells from the arrival's threshold, so the
+ *    colony can ask whether a spot is joined to the rest of the world *before* it sends anybody
+ *    to it. The gaps between overlapping buildings are open ground nobody can get to, and a
+ *    standing spot in one is a villager pressed against a wall for the life of the thread.
+ * 3. **Collision** — `slide()` is applied to every step regardless of whether the agent is
  *    following a path. Routing can fail (a site that got walled in between polls, a path
  *    budget that has not caught up yet); walking through a wall must not be what happens
  *    when it does.
@@ -20,24 +24,113 @@
  */
 
 /** Cell size, in metres. Small enough to resolve the gaps between neighbouring buildings. */
-const CELL = 0.5
-/** Half-width of the navigable square. Comfortably contains the colony and the landing pad. */
-const HALF = 56
-/** Give up rather than stall the frame if a search goes pathological. */
-const MAX_EXPANSIONS = 24000
+export const NAV_CELL = 0.5
+/**
+ * Walkable ground outside the outermost deck a zone can be dealt.
+ *
+ * The crew's own standing spots never need it — a work spot is at most about 7.4 from its tile
+ * centre, inside the tile's own 7.6 — but a villager rounding the last deck does.
+ */
+export const NAV_MARGIN = 3.6
+/**
+ * Half-width of the navigable square: the lattice's own reach plus that margin, rounded up to
+ * a whole cell. `√3 · 7.6 · 11 + 7.6 + 3.6`, which is 156, well inside the ±170 the ground
+ * plane covers.
+ *
+ * A constant rather than an import, because this module deliberately depends on nothing — that
+ * is what lets its tables be held in `node --test`. `tests/navigation.test.mjs` holds it to the
+ * arithmetic in `plots.js`, which is the join that cannot rot.
+ */
+export const DEFAULT_HALF = 156
+/**
+ * Give up rather than stall the frame if a search goes pathological.
+ *
+ * Sized for the longest route the map can ask for: the ship to a ring-eleven deck is about
+ * three hundred cells, measured at 14,110–19,486 expansions and 2.3–3.0 ms across a colony's
+ * worth of blocking scatter. The old 6,000 was sized for a square a quarter this wide and cut
+ * every one of those short.
+ */
+export const MAX_EXPANSIONS = 24000
 
 const SQRT2 = Math.SQRT2
-/** Scratch for the solid queries, so the frame loop allocates nothing. */
-const _near = []
+
+/**
+ * A fill covering less of the open ground than this is a pocket, not the colony — the threshold
+ * itself has been ringed in. A real colony's threshold reaches nearly all of it (the fixtures
+ * measure above 0.9); a walled-in door measured 112 cells of 49972, which is 0.002.
+ */
+const SEED_MIN_SHARE = 0.25
+
+/**
+ * A slide that covers less than this fraction of the step asked for is a refusal.
+ *
+ * An axis-only slide moves `cos θ` of the step, θ the angle between the step and the free
+ * axis. 0.3 refuses approaches within ~17.5° of the wall's normal and accepts everything
+ * shallower — which is the difference between sliding along a wall and walking at one.
+ */
+export const SLIDE_MIN_FRACTION = 0.3
+
+/**
+ * Did the move `(gotX, gotZ)` count as progress on the step `(dx, dz)`?
+ *
+ * Relative rather than absolute on purpose: `_walk` scales its step by `min(1, goalDist / 1.8)`,
+ * so an arriving villager legitimately asks for sub-millimetre steps and an absolute floor
+ * would refuse every arrival.
+ *
+ * @param {number} dx step asked for, on x
+ * @param {number} dz step asked for, on z
+ * @param {number} gotX movement the slide would actually make, on x
+ * @param {number} gotZ movement the slide would actually make, on z
+ * @param {number} [fraction] the floor, as a fraction of the step asked for
+ * @returns {boolean}
+ */
+export function slideCounts(dx, dz, gotX, gotZ, fraction = SLIDE_MIN_FRACTION) {
+  const asked = Math.hypot(dx, dz)
+  if (asked === 0) return true
+  return Math.hypot(gotX, gotZ) >= fraction * asked
+}
+
+/** Two equal-length byte arrays, compared cell by cell. */
+function sameBytes(a, b) {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
 
 export class Navigation {
-  constructor() {
-    this.cell = CELL
-    this.half = HALF
-    this.size = Math.ceil((HALF * 2) / CELL)
+  /**
+   * @param {{half?: number}} [opts] half-width of the square, in metres. The default covers
+   *   every tile the allocator can hand out; the tests that were written on the old ±56 square
+   *   pass that size explicitly.
+   */
+  constructor({ half = DEFAULT_HALF } = {}) {
+    this.cell = NAV_CELL
+    this.half = half
+    this.size = Math.ceil((half * 2) / NAV_CELL)
     const n = this.size * this.size
 
     this.blocked = new Uint8Array(n)
+    /**
+     * The ground's own veto, which no building can change: the sea, and everything outside the
+     * lattice a zone can be placed on. Rasterised once per setting by `setGround` and copied
+     * into `blocked` at the head of every rebuild.
+     */
+    this.ground = new Uint8Array(n)
+    /** What `ground` was rasterised for. A rebuild never re-evaluates it; a new key does. */
+    this.groundKey = null
+    /**
+     * Which open cells the colony can actually be walked to, from the arrival's threshold.
+     *
+     * An open cell is not the same thing as a cell somebody can get to: two buildings whose
+     * blocked discs overlap leave pockets of one to six free cells between them, and `nearestFree`
+     * hands those back as happily as any other ground. A villager sent to one walks at the wall
+     * between it and the world for eight seconds and then gives up. This is the answer to the
+     * question that actually matters — filled by `setSeed`, read by `isReachable`.
+     */
+    this.reachable = new Uint8Array(n)
+    /** The cell the fill started from, and the `layout` it was filled against. -1 for "never filled". */
+    this.reachSeed = -1
+    this.reachLayout = -1
+    this._queue = new Int32Array(n)
     this.gScore = new Float32Array(n)
     this.parent = new Int32Array(n)
     this.stamp = new Int32Array(n) // which search last touched this node
@@ -51,31 +144,24 @@ export class Navigation {
     /** Bumped on every rebuild; agents use it to notice their path is stale. */
     this.version = 0
     /**
-     * The obstacles that are walls to lean on, not just cells to route round: buildings,
-     * with a `keep` radius the crew is pushed back out to. The grid alone cannot hold that
-     * line — its cells are blocked at 80% of a footprint so the gaps between slots stay
-     * walkable, and a half-cell of rounding on top of that lets an astronaut settle with
-     * a shoulder through the wall.
+     * Bumped only when a rebuild leaves a different set of cells blocked.
+     *
+     * `version` cannot answer "has the ground changed?" because the colony rebuilds on every
+     * poll whether or not anything moved. An agent that gave up on an unreachable site asks
+     * this instead: while `layout` holds still, the site it abandoned is exactly as
+     * unreachable as it was, and walking at it again would only end in the same give-up.
      */
-    this.solids = []
-    /** The solids bucketed on a coarse grid, so a query only looks at its neighbourhood. */
-    this._solidBuckets = new Map()
-    this._bucket = 4
-  }
-
-  _bucketKey(bx, bz) {
-    return bx * 100003 + bz
-  }
-
-  /** Solids are inserted in every bucket they touch; query just this bucket, once each. */
-  _solidsNear(x, z, out) {
-    out.length = 0
-    const b = this._bucket
-    const bx = Math.floor(x / b)
-    const bz = Math.floor(z / b)
-    const list = this._solidBuckets.get(this._bucketKey(bx, bz))
-    if (list) for (let i = 0; i < list.length; i++) out.push(list[i])
-    return out
+    this.layout = 0
+    this._previous = new Uint8Array(n)
+    /**
+     * Why the last `findPath` came back the way it did: `'found'`, `'unreachable'` (the goal is
+     * walled off from the start — the reachability map says so, or the search ran out of ground)
+     * or `'cut'` (it hit its expansion cap first, which says nothing about whether a route
+     * exists). A null path is both of the last two, and only the first of them is geometry.
+     */
+    this.lastSearch = 'found'
+    /** What the last `findPath` spent, so a caller can budget a frame's worth of searching. */
+    this.lastExpansions = 0
   }
 
   // ── grid <-> world ──────────────────────────────────────────────────────────────────
@@ -106,30 +192,50 @@ export class Navigation {
    * Rasterise the obstacle list. Each is a circle `{ x, z, r }`, already inflated by the
    * caller for the astronaut's own width — doing it here would hide the one number that
    * decides whether the gaps between buildings stay walkable.
+   *
+   * `isBlocked` is the *ground* itself saying no, which circles cannot express: a coastal
+   * setting's shoreline runs through the middle of this square, and without it the crew paths
+   * happily across the sea. It is tested once per cell, at the cell's own centre, after the
+   * circles are in — so an obstacle already covering a cell costs no predicate call to
+   * reconsider, and the two kinds of blocking compose rather than override. Null for every
+   * dry setting, which is what keeps this loop off the space theme's path entirely.
+   *
+   * @param {{x: number, z: number, r: number}[]} obstacles
+   * @param {((x: number, z: number) => boolean) | null} [isBlocked] true where the ground
+   *   itself is unwalkable — the beach and the slope under a sea.
    */
-  rebuild(obstacles) {
-    this.blocked.fill(0)
-    const { size, cell } = this
-    this.solids = obstacles.filter((o) => o.keep > 0)
-    // Bucket them. A solid lands in every bucket its keep circle touches, so a point only
-    // ever has to look at its own bucket. Scanning neighbouring buckets would apply the
-    // same obstacle's repulsion several times, especially at bucket boundaries.
-    this._solidBuckets.clear()
-    const b = this._bucket
-    for (const o of this.solids) {
-      const x0 = Math.floor((o.x - o.keep) / b)
-      const x1 = Math.floor((o.x + o.keep) / b)
-      const z0 = Math.floor((o.z - o.keep) / b)
-      const z1 = Math.floor((o.z + o.keep) / b)
-      for (let bx = x0; bx <= x1; bx++) {
-        for (let bz = z0; bz <= z1; bz++) {
-          const key = this._bucketKey(bx, bz)
-          let list = this._solidBuckets.get(key)
-          if (!list) this._solidBuckets.set(key, (list = []))
-          list.push(o)
-        }
+  /**
+   * Rasterise the ground's veto, once per `key`.
+   *
+   * `key` is what the predicate is a function of — the setting's id, because the terrain
+   * sampler behind it is itself memoised on that id. While the key holds, the mask holds, and
+   * the per-poll rebuild costs a copy rather than a quarter of a million terrain samples.
+   *
+   * @param {((x: number, z: number) => boolean) | null} predicate true where nobody may stand
+   * @param {string} key what the predicate is a function of
+   * @returns {boolean} whether it rasterised anything
+   */
+  setGround(predicate, key) {
+    if (key === this.groundKey) return false
+    this.groundKey = key
+    this.ground.fill(0)
+    if (!predicate) return true
+    const size = this.size
+    for (let iz = 0; iz < size; iz++) {
+      const wz = this.toWorld(iz)
+      const row = iz * size
+      for (let ix = 0; ix < size; ix++) {
+        if (predicate(this.toWorld(ix), wz)) this.ground[row + ix] = 1
       }
     }
+    return true
+  }
+
+  rebuild(obstacles, isBlocked = null) {
+    this._previous.set(this.blocked)
+    // The ground's veto is the floor every rebuild starts from, at the cost of a copy.
+    this.blocked.set(this.ground)
+    const { size, cell } = this
 
     for (const o of obstacles) {
       const r = o.r
@@ -151,149 +257,21 @@ export class Navigation {
         }
       }
     }
+
+    if (isBlocked) {
+      for (let iz = 0; iz < size; iz++) {
+        const wz = this.toWorld(iz)
+        const row = iz * size
+        for (let ix = 0; ix < size; ix++) {
+          if (this.blocked[row + ix] === 1) continue
+          if (isBlocked(this.toWorld(ix), wz)) this.blocked[row + ix] = 1
+        }
+      }
+    }
+
     this.version++
+    if (!sameBytes(this.blocked, this._previous)) this.layout++
     void cell
-  }
-
-  /**
-   * A shove out of any solid the point is inside the keep radius of, as a velocity added
-   * to `out`. Zero when clear. Firm enough to win against a crowd pressing inward, gentle
-   * enough at the edge that nobody bounces off a wall.
-   */
-  repel(pos, out) {
-    const solids = this._solidsNear(pos.x, pos.z, _near)
-    for (let i = 0; i < solids.length; i++) {
-      const o = solids[i]
-      const dx = pos.x - o.x
-      const dz = pos.z - o.z
-      const keep = o.keep
-      const d2 = dx * dx + dz * dz
-      if (d2 >= keep * keep) continue
-      const d = Math.sqrt(d2)
-      if (d < 1e-4) {
-        out.x += keep * 2
-        continue
-      }
-      const strength = (1 - d / keep) * 6 + 0.4
-      out.x += (dx / d) * strength
-      out.z += (dz / d) * strength
-    }
-    return out
-  }
-
-  /**
-   * The hard version of `repel`: a point inside a solid's keep radius is put back on it.
-   * Applied after every move, so a crowd pressing inward can never win against a wall.
-   */
-  keepOut(pos) {
-    const startX = pos.x
-    const startZ = pos.z
-    // Two keep circles that overlap make a pocket: out of one is into the other. A few
-    // passes settle the easy cases; a point still inside after that is left where it was
-    // rather than shoved back and forth, and the astronaut's own wobble check moves it.
-    for (let pass = 0; pass < 3; pass++) {
-      const solids = this._solidsNear(pos.x, pos.z, _near)
-      let any = false
-      for (let i = 0; i < solids.length; i++) {
-        const o = solids[i]
-        const dx = pos.x - o.x
-        const dz = pos.z - o.z
-        const keep = o.keep
-        const d2 = dx * dx + dz * dz
-        if (d2 >= keep * keep) continue
-        const d = Math.sqrt(d2)
-        if (d < 1e-4) {
-          pos.x = o.x + keep
-          continue
-        }
-        const nx = o.x + (dx / d) * keep
-        const nz = o.z + (dz / d) * keep
-        any = true
-        if (!this.isBlocked(nx, nz)) {
-          pos.x = nx
-          pos.z = nz
-          continue
-        }
-        // Straight out is walled off — a crate against the building, say. Look round the
-        // keep circle for the nearest open spot and edge toward it, a little a frame, so the
-        // astronaut walks out of the pocket rather than teleporting.
-        const a0 = Math.atan2(dz, dx)
-        for (let k = 1; k <= 9; k++) {
-          const da = k * 0.2
-          for (const sgn of [1, -1]) {
-            const a = a0 + sgn * da
-            const tx = o.x + Math.cos(a) * keep
-            const tz = o.z + Math.sin(a) * keep
-            if (this.isBlocked(tx, tz)) continue
-            const len = Math.hypot(tx - pos.x, tz - pos.z) || 1
-            const step = Math.min(len, 0.05)
-            const sx = pos.x + ((tx - pos.x) / len) * step
-            const sz = pos.z + ((tz - pos.z) / len) * step
-            // The way there has to be open too, or this and `slide` trade the point back
-            // and forth across a blocked cell for ever.
-            if (this.isBlocked(sx, sz)) continue
-            pos.x = sx
-            pos.z = sz
-            k = 99
-            break
-          }
-        }
-      }
-      if (!any) break
-    }
-    if (this.insideKeep(pos.x, pos.z) && this.insideKeep(startX, startZ)) {
-      pos.x = startX
-      pos.z = startZ
-      return 0
-    }
-    // How far the point was put back, so a walk can tell a step that was undone from one
-    // that landed.
-    return Math.hypot(pos.x - startX, pos.z - startZ)
-  }
-
-  /**
-   * The nearest spot that is neither a blocked cell nor inside any keep circle — somewhere
-   * an astronaut can stand without anything pushing it. Searched on rings out to `maxR`.
-   */
-  nearestClear(x, z, maxR = 5, allowed = () => true) {
-    if (!this.isBlocked(x, z) && !this.insideKeep(x, z) && allowed(x, z)) return { x, z }
-    for (let r = 0.35; r <= maxR; r += 0.35) {
-      const n = Math.max(8, Math.round(r * 14))
-      const a0 = (r * 7.3) % (Math.PI * 2)
-      for (let i = 0; i < n; i++) {
-        const a = a0 + (i / n) * Math.PI * 2
-        const cx = x + Math.cos(a) * r
-        const cz = z + Math.sin(a) * r
-        if (this.isBlocked(cx, cz) || this.insideKeep(cx, cz)) continue
-        if (!allowed(cx, cz)) continue
-        return { x: cx, z: cz }
-      }
-    }
-    return null
-  }
-
-  /** Whether a point is inside any solid's keep radius — no place to aim a walk at. */
-  insideKeep(x, z) {
-    const solids = this._solidsNear(x, z, _near)
-    for (let i = 0; i < solids.length; i++) {
-      const o = solids[i]
-      const dx = x - o.x
-      const dz = z - o.z
-      if (dx * dx + dz * dz < o.keep * o.keep) return true
-    }
-    return false
-  }
-
-  /** Short local walks must clear both the routing grid and the visible walls. */
-  clearWalk(x0, z0, x1, z1) {
-    const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / (CELL * 0.5)))
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps
-      const x = x0 + (x1 - x0) * t
-      const z = z0 + (z1 - z0) * t
-      if (this.isBlocked(x, z) || this.insideKeep(x, z)) return false
-    }
-    return true
   }
 
   /**
@@ -301,9 +279,18 @@ export class Navigation {
    * that has been built over and for an agent that a new building landed on top of.
    */
   nearestFree(x, z, maxRings = 24) {
+    return this._nearestCell(x, z, maxRings, this.blocked, 0)
+  }
+
+  /**
+   * The ring scan both `nearestFree` and `nearestReachable` are: the nearest cell to `(x, z)`
+   * whose entry in `map` is `want`. Taking the array rather than a predicate keeps the inner
+   * loop a typed-array read and costs no closure per call — this runs once per agent per poll.
+   */
+  _nearestCell(x, z, maxRings, map, want) {
     const cx = this.toCell(x)
     const cz = this.toCell(z)
-    if (this.inBounds(cx, cz) && this.blocked[cz * this.size + cx] === 0) return { ix: cx, iz: cz }
+    if (this.inBounds(cx, cz) && map[cz * this.size + cx] === want) return { ix: cx, iz: cz }
 
     for (let ring = 1; ring <= maxRings; ring++) {
       let best = null
@@ -315,7 +302,7 @@ export class Navigation {
           const ix = cx + dx
           const iz = cz + dz
           if (!this.inBounds(ix, iz)) continue
-          if (this.blocked[iz * this.size + ix] === 1) continue
+          if (map[iz * this.size + ix] !== want) continue
           const d = dx * dx + dz * dz
           if (d < bestD) {
             bestD = d
@@ -326,6 +313,100 @@ export class Navigation {
       if (best) return best
     }
     return null
+  }
+
+  // ── reachable ground ────────────────────────────────────────────────────────────────
+
+  /**
+   * Fill `reachable` from a world point — the arrival's threshold, which is where every
+   * villager comes from and therefore the definition of "the walkable world" for this colony.
+   *
+   * A blocked seed falls back to the nearest free cell, because the threshold of a castle sits
+   * a hair inside the clearance disc the gatehouse blocks out.
+   *
+   * The fill costs one pass over the grid, so it is skipped unless it would say something
+   * different: the same seed cell against the same `layout` is the same answer. `version` is no
+   * use here — the colony rebuilds the grid on every poll whether or not a cell moved.
+   */
+  setSeed(x, z) {
+    const free = this.nearestFree(x, z)
+    // Nowhere to stand within reach of the door. Fall back to the grid as it was before the map
+    // existed rather than serving a fill built for different ground — an answer that is merely
+    // old is worse than no answer, because nothing downstream can tell that it is old.
+    if (!free) {
+      this.reachSeed = -1
+      return
+    }
+    const idx = free.iz * this.size + free.ix
+    if (idx === this.reachSeed && this.layout === this.reachLayout) return
+    this.reachSeed = idx
+    this.reachLayout = this.layout
+    const filled = this._fill(idx)
+    // A threshold that is itself ringed in fills a pocket and calls it the world: every site off
+    // it reads unreachable, which switches off doorway retries for the whole crew and quietly
+    // reverts the ring walk. Too small to be the colony means the seed is wrong, not the ground,
+    // so say so by falling back to the unseeded behaviour.
+    if (filled < this._freeCells() * SEED_MIN_SHARE) this.reachSeed = -1
+  }
+
+  /** How much open ground there is, for judging whether a fill covers the colony or a pocket. */
+  _freeCells() {
+    let free = 0
+    for (let i = 0; i < this.blocked.length; i++) if (this.blocked[i] === 0) free++
+    return free
+  }
+
+  /**
+   * Can a villager walk to this point from the threshold?
+   *
+   * Before the first `setSeed` — a `Navigation` nobody has handed a door to — every open cell
+   * counts, which is exactly what the grid meant before the map existed.
+   */
+  isReachable(x, z) {
+    if (this.reachSeed < 0) return !this.isBlocked(x, z)
+    const ix = this.toCell(x)
+    const iz = this.toCell(z)
+    if (!this.inBounds(ix, iz)) return false
+    return this.reachable[iz * this.size + ix] === 1
+  }
+
+  /** `nearestFree`, restricted to ground that is actually joined to the rest of the colony. */
+  nearestReachable(x, z, maxRings = 24) {
+    if (this.reachSeed < 0) return this.nearestFree(x, z, maxRings)
+    return this._nearestCell(x, z, maxRings, this.reachable, 1)
+  }
+
+  /**
+   * One 8-connected flood fill over the open cells, moving exactly as `_search` is allowed to:
+   * a diagonal only where both of its orthogonals are clear. The two have to agree, or the map
+   * would promise ground A* then refuses to route to.
+   */
+  _fill(startIdx) {
+    const size = this.size
+    const { reachable, blocked } = this
+    reachable.fill(0)
+    const queue = this._queue
+    let head = 0
+    let tail = 0
+    queue[tail++] = startIdx
+    reachable[startIdx] = 1
+
+    while (head < tail) {
+      const current = queue[head++]
+      const cx = current % size
+      const cz = (current - cx) / size
+      for (let k = 0; k < 8; k++) {
+        const nx = cx + NEIGHBOURS[k * 2]
+        const nz = cz + NEIGHBOURS[k * 2 + 1]
+        if (!this.inBounds(nx, nz)) continue
+        const nIdx = nz * size + nx
+        if (blocked[nIdx] === 1 || reachable[nIdx] === 1) continue
+        if (k >= 4 && (blocked[cz * size + nx] === 1 || blocked[nz * size + cx] === 1)) continue
+        reachable[nIdx] = 1
+        queue[tail++] = nIdx
+      }
+    }
+    return tail
   }
 
   // ── line of sight ───────────────────────────────────────────────────────────────────
@@ -347,27 +428,14 @@ export class Navigation {
   // ── A* ──────────────────────────────────────────────────────────────────────────────
 
   /**
-   * A route from one world point to another, as world-space waypoints, or `null` if there
-   * is no way through. The returned path excludes the start and ends exactly on the goal.
+   * A* from one cell index to another over the blocked grid, leaving the route in `parent`.
+   * `'found'`, `'cut'` when it spends `maxExpansions` first, or `'unreachable'` when it runs out
+   * of ground to expand.
    */
-  findPath(sx, sz, tx, tz) {
-    const start = this.nearestFree(sx, sz)
-    const goal = this.nearestFree(tx, tz)
-    if (!start || !goal) return null
-
+  _search(startIdx, goalIdx, maxExpansions) {
     const size = this.size
-    const startIdx = start.iz * size + start.ix
-    const goalIdx = goal.iz * size + goal.ix
-
-    // A goal that has been built over — a stand position a new building landed on, or a
-    // point simply inside a wall — resolves to the nearest walkable spot. Routing to the
-    // requested point instead would end every such path with a leg through the obstacle.
-    const reachableX = this.isBlocked(tx, tz) ? this.toWorld(goal.ix) : tx
-    const reachableZ = this.isBlocked(tx, tz) ? this.toWorld(goal.iz) : tz
-
-    // Straight shot: by far the common case in an open colony, and it skips the search.
-    if (this.lineOfSight(sx, sz, reachableX, reachableZ)) return [{ x: reachableX, z: reachableZ }]
-
+    const gx = goalIdx % size
+    const gz = (goalIdx - gx) / size
     const gen = ++this.generation
     const { gScore, parent, stamp, closed } = this
     this.heapSize = 0
@@ -376,14 +444,11 @@ export class Navigation {
     parent[startIdx] = -1
     stamp[startIdx] = gen
     closed[startIdx] = 0
-    this._push(startIdx, this._heuristic(start.ix, start.iz, goal.ix, goal.iz))
+    this._push(startIdx, this._heuristic(startIdx % size, (startIdx - (startIdx % size)) / size, gx, gz))
 
     let expansions = 0
     let found = false
-    // The node that got nearest the goal, for when the goal turns out to be unreachable —
-    // a route to the closest point beats no route, which is a straight line into a wall.
-    let best = startIdx
-    let bestH = this._heuristic(start.ix, start.iz, goal.ix, goal.iz)
+    let cut = false
 
     while (this.heapSize > 0) {
       const current = this._pop()
@@ -393,16 +458,14 @@ export class Navigation {
         found = true
         break
       }
-      if (++expansions > MAX_EXPANSIONS) break
+      if (++expansions > maxExpansions) {
+        cut = true
+        break
+      }
 
       const cx = current % size
       const cz = (current - cx) / size
       const g = gScore[current]
-      const h = this._heuristic(cx, cz, goal.ix, goal.iz)
-      if (h < bestH) {
-        bestH = h
-        best = current
-      }
 
       for (let k = 0; k < 8; k++) {
         const nx = cx + NEIGHBOURS[k * 2]
@@ -426,25 +489,73 @@ export class Navigation {
         closed[nIdx] = 0
         gScore[nIdx] = tentative
         parent[nIdx] = current
-        this._push(nIdx, tentative + this._heuristic(nx, nz, goal.ix, goal.iz))
+        this._push(nIdx, tentative + this._heuristic(nx, nz, gx, gz))
       }
     }
 
-    // Unreachable, or the search ran out: go as far as it got. If that is nowhere, null.
-    const endIdx = found ? goalIdx : best
-    if (!found && best === startIdx) return null
+    this.lastExpansions = expansions
+    return found ? 'found' : cut ? 'cut' : 'unreachable'
+  }
+
+  /**
+   * A route from one world point to another, as world-space waypoints, or `null` if there
+   * is no way through. The returned path excludes the start and ends exactly on the goal.
+   */
+  findPath(sx, sz, tx, tz, maxExpansions = MAX_EXPANSIONS) {
+    const start = this.nearestFree(sx, sz)
+    const goal = this.nearestFree(tx, tz)
+    if (!start || !goal) {
+      this.lastSearch = 'unreachable'
+      this.lastExpansions = 0
+      return null
+    }
+
+    const size = this.size
+    const startIdx = start.iz * size + start.ix
+    const goalIdx = goal.iz * size + goal.ix
+
+    /**
+     * The map answers "is there a way through?" outright, and for free.
+     *
+     * A search cut short proves nothing, and on an open map a walled-off goal is exactly the
+     * search that gets cut: it floods the whole outside before it spends the cap. So the one
+     * geometric fact — these two cells are not joined — is read off the flood fill instead.
+     * One of them inside the threshold's component and the other outside it is that fact.
+     * Both outside says only that neither is joined to the door, which is not the same claim,
+     * and those fall through to the search as they always did.
+     */
+    if (this.reachSeed >= 0 && this.reachable[startIdx] !== this.reachable[goalIdx]) {
+      this.lastSearch = 'unreachable'
+      this.lastExpansions = 0
+      return null
+    }
+
+    // A goal that has been built over — a stand position a new building landed on, or a
+    // point simply inside a wall — resolves to the nearest walkable spot. Routing to the
+    // requested point instead would end every such path with a leg through the obstacle.
+    const reachableX = this.isBlocked(tx, tz) ? this.toWorld(goal.ix) : tx
+    const reachableZ = this.isBlocked(tx, tz) ? this.toWorld(goal.iz) : tz
+
+    // Straight shot: by far the common case in an open colony, and it skips the search.
+    if (this.lineOfSight(sx, sz, reachableX, reachableZ)) {
+      this.lastSearch = 'found'
+      this.lastExpansions = 0
+      return [{ x: reachableX, z: reachableZ }]
+    }
+
+    const outcome = this._search(startIdx, goalIdx, maxExpansions)
+    this.lastSearch = outcome
+    if (outcome !== 'found') return null
 
     // Walk the parents back, then smooth.
     const cells = []
-    let node = endIdx
+    let node = goalIdx
     while (node !== -1) {
       cells.push(node)
-      node = parent[node]
+      node = this.parent[node]
     }
     cells.reverse()
-    const ex = found ? reachableX : this.toWorld(endIdx % size)
-    const ez = found ? reachableZ : this.toWorld((endIdx - (endIdx % size)) / size)
-    return this._smooth(cells, sx, sz, ex, ez)
+    return this._smooth(cells, sx, sz, reachableX, reachableZ)
   }
 
   /** Octile distance — admissible for 8-connected movement, and never overestimates. */
@@ -501,6 +612,12 @@ export class Navigation {
    * This runs on every step whether or not a path is being followed, which is what makes
    * "never walks through a building" a property of the movement rather than a property of
    * the pathfinder having succeeded.
+   *
+   * An axis-only slide that covers less than `SLIDE_MIN_FRACTION` of the step is a wall, not
+   * a slide: a villager shouldering a wall head-on used to creep a micron sideways and report
+   * success, which kept `agent.blocked` clear and left it walking on the spot until the
+   * 45-second fallback. Such a step is refused outright — no micron move — so the caller's
+   * own eight-second escape fires instead.
    */
   slide(pos, dx, dz) {
     // An agent a building was dropped on top of has no legal move at all; walk it out.
@@ -524,11 +641,11 @@ export class Navigation {
       pos.z = nz
       return true
     }
-    if (dx !== 0 && !this.isBlocked(nx, pos.z)) {
+    if (dx !== 0 && !this.isBlocked(nx, pos.z) && slideCounts(dx, dz, dx, 0)) {
       pos.x = nx
       return true
     }
-    if (dz !== 0 && !this.isBlocked(pos.x, nz)) {
+    if (dz !== 0 && !this.isBlocked(pos.x, nz) && slideCounts(dx, dz, 0, dz)) {
       pos.z = nz
       return true
     }

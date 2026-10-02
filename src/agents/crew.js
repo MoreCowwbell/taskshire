@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { withCurve } from '../core/curve.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js'
+import { crewCharacters } from './cast.js'
 
 /**
  * Real skeletal animation for the whole crew, in one draw call.
@@ -34,71 +35,66 @@ const BAKE_FPS = 30
 const TEXELS_PER_BONE = 4
 
 /**
- * Attachment and picking bones. Their world transforms are baked into a small CPU table:
- * the helmet needs the head's actual position, and hit detection needs the hands and feet.
- * Reading this table avoids evaluating a skeleton per astronaut per pointer event.
+ * Which file the crew comes out of, which clips are worth baking and which bones things
+ * hang off are all theme data. `configureCrew` installs `manifest.crew` before `loadCrew`
+ * runs; nothing in here knows what an astronaut is.
  */
-const ATTACH = ['head', 'chest', 'hand.r', 'hand.l', 'foot.r', 'foot.l']
+let SPEC = null
+let CREW_URL = ''
 
 /**
- * The clips, and how the colony uses them. `loop` false means the clip is a one-shot that
- * holds on its last frame — which is what a sit-down or a spawn wants.
- */
-const CLIP = {
-  idle: { name: 'Idle_A', loop: true },
-  idleAlt: { name: 'Idle_B', loop: true },
-  walk: { name: 'Walking_A', loop: true },
-  run: { name: 'Running_A', loop: true },
-  work: { name: 'Hammering', loop: true, tweak: 'work' },
-  workAlt: { name: 'Working_A', loop: true },
-  cheer: { name: 'Cheering', loop: true },
-  jump: { name: 'Jump_Full_Short', loop: false },
-  wave: { name: 'Waving', loop: true },
-  sitDown: { name: 'Sit_Floor_Down', loop: false },
-  sit: { name: 'Sit_Floor_Idle', loop: true },
-  standUp: { name: 'Sit_Floor_StandUp', loop: false },
-  hit: { name: 'Hit_A', loop: true },
-  spawn: { name: 'Spawn_Ground', loop: false },
-  interact: { name: 'Interact', loop: true },
-  // The phone check: the idle, with the left arm brought up to hold something in front of
-  // the visor. Raised over a short one-shot, held on a loop, lowered over another.
-  phoneUp: { name: 'Idle_A', loop: false, tweak: 'phoneUp', frames: [0, 15] },
-  phone: { name: 'Idle_A', loop: true, tweak: 'phone' },
-  phoneDown: { name: 'Idle_A', loop: false, tweak: 'phoneDown', frames: [0, 15] },
-}
-
-/**
- * Adjustments made to KayKit's clips before they are baked — the colony's own reading of
- * the motion, in the rig's own bone space.
+ * Attachment roles in slot order, and the bones behind them.
  *
- * Per clip, per bone: `scale` multiplies how far the bone strays from its first keyframe
- * (so a swing from the wrist can be moved up the arm by damping the wrist and amplifying the
- * shoulder), `offset` turns the bone by a fixed Euler on top of whatever the clip does (an
- * arm held up through an idle), and `ramp` fades that offset in over the first so many
- * seconds — or out, with a negative ramp — which is what turns a held pose into a raise.
+ * A worn part asks for a *role* — a helmet wants "the head" — so `attachSlot` is keyed by
+ * role and a theme rigged differently only has to rename its bones in the manifest. Their
+ * *world* transforms are baked into a small side-table on the CPU as well, because a helmet
+ * does not want the skinning matrix: it wants to know where the head actually is. Three
+ * bones over the whole animation set is a hundred and forty kilobytes; the alternative is
+ * evaluating a skeleton per astronaut per frame.
  */
-export const TWEAKS = {
-  work: {
-    'hand.r': { scale: 0.45, ref: 'far' },
-    'upperarm.r': { scale: 1.6 },
-    'lowerarm.r': { scale: 1.35 },
-  },
-  // Found by a small search over the joints for a hand in front of the visor.
-  phone: {
-    'upperarm.l': { offset: [3.09, 0.53, -0.96] },
-    'lowerarm.l': { offset: [-0.54, 0.89, 0.92] },
-  },
-}
-// The raise and the lower are the held pose, ramped.
-TWEAKS.phoneUp = Object.fromEntries(Object.entries(TWEAKS.phone).map(([k, v]) => [k, { ...v, ramp: 0.45 }]))
-TWEAKS.phoneDown = Object.fromEntries(Object.entries(TWEAKS.phone).map(([k, v]) => [k, { ...v, ramp: -0.45 }]))
+let ROLES = []
+let ATTACH = []
 
-const plainName = (n) => n.replace(/[.\s_]/g, '').toLowerCase()
+let loading = null
+let rig = null
 
 /**
- * Apply a tweak table to a clip: a new clip, the source untouched.
+ * Install a theme's crew spec. Must run before `loadCrew()`.
+ *
+ * @param {object} spec  `manifest.crew`
+ * @param {string} url   where its glb is served from
+ */
+export function configureCrew(spec, url) {
+  SPEC = spec
+  CREW_URL = url
+  ROLES = Object.keys(spec.attach)
+  ATTACH = ROLES.map((r) => spec.attach[r])
+  loading = null
+  rig = null
+}
+
+/** Load and bake the rig. Idempotent — the first caller owns the work. */
+export function loadCrew() {
+  if (!loading) loading = bake().then((r) => (rig = r))
+  return loading
+}
+
+/** The baked rig, or null if `loadCrew()` has not resolved yet. */
+export function crewRig() {
+  return rig
+}
+
+/**
+ * Apply a tweak table to a clip: a new clip, the source untouched (upstream 259f434).
+ *
+ * Per bone: `scale` multiplies how far the bone strays from its reference keyframe — the
+ * first, or with `ref: 'far'` the one farthest from it — `offset` turns it by a fixed Euler
+ * on top, and `ramp` fades that offset in over so many seconds (out, when negative). Only a
+ * clip whose manifest entry names a `tweak` comes through here, so a theme without one bakes
+ * exactly the clips it always baked.
  */
 function tweakClip(clip, table, key) {
+  const plainName = (n) => n.replace(/[.\s_]/g, '').toLowerCase()
   const id = new THREE.Quaternion()
   const q = new THREE.Quaternion()
   const q0 = new THREE.Quaternion()
@@ -115,8 +111,6 @@ function tweakClip(clip, table, key) {
     const t = entry[1]
     const values = Float32Array.from(track.values)
     const times = track.times
-    // What `scale` shrinks toward: the first keyframe, or the one farthest from it — for a
-    // swing, the cocked pose or the struck pose.
     let refAt = 0
     if (t.ref === 'far') {
       q0.fromArray(values, 0)
@@ -157,47 +151,16 @@ function tweakClip(clip, table, key) {
   return new THREE.AnimationClip(`${clip.name}:${key}`, clip.duration, tracks)
 }
 
-const CREW_URL = `${import.meta.env.BASE_URL}assets/crew.glb`
-
-/**
- * The mannequin's own head is left out of the body: the colony puts its own helmet, visor
- * and screen-face on the head bone instead, which is the whole of the astronaut's identity.
- */
-const DROP_MESHES = ['Mannequin_Medium_Head']
-
-let loading = null
-let rig = null
-let gltfCache = null
-
-/** Load and bake the rig. Idempotent — the first caller owns the work. */
-export function loadCrew() {
-  if (!loading) loading = bake().then((r) => (rig = r))
-  return loading
-}
-
-/**
- * Bake again with a different tweak table. For tuning poses live: the astronauts take the
- * new rig with `setRig`, and nothing else has to know.
- */
-export async function rebakeCrew(tweaks = TWEAKS) {
-  rig = await bake(DROP_MESHES, tweaks)
-  return rig
-}
-if (import.meta.env.DEV && typeof window !== 'undefined') window.__rebakeCrew = rebakeCrew
-
-/** The baked rig, or null if `loadCrew()` has not resolved yet. */
-export function crewRig() {
-  return rig
-}
-
-async function bake(dropMeshes = DROP_MESHES, tweaks = TWEAKS) {
-  const gltf = gltfCache || (gltfCache = await new GLTFLoader().loadAsync(CREW_URL))
+async function bake(dropMeshes = SPEC.dropMeshes) {
+  const gltf = await new GLTFLoader().loadAsync(CREW_URL)
   const root = gltf.scene
   root.updateMatrixWorld(true)
 
   const skinned = []
+  const statics = []
   root.traverse((o) => {
     if (o.isSkinnedMesh) skinned.push(o)
+    else if (o.isMesh) statics.push(o)
   })
   if (!skinned.length) throw new Error('crew: crew.glb has no skinned mesh')
 
@@ -205,20 +168,72 @@ async function bake(dropMeshes = DROP_MESHES, tweaks = TWEAKS) {
   const bones = skeleton.bones
   const boneIndex = new Map(bones.map((b, i) => [b.name, i]))
 
-  const geometry = mergeBody(skinned, dropMeshes)
-  const bake = bakeClips(root, skeleton, skinned[0], gltf.animations, tweaks)
+  // A textured crew (several characters, each painted from its row of the packer's atlas)
+  // keeps its UVs and that atlas; the space mannequin drops both and is painted from the
+  // suit palette instead.
+  const textured = Boolean(SPEC.characters?.length)
+  const characters = crewCharacters(SPEC)
+  const geometries = new Map()
+  for (const c of characters) {
+    // A single-body crew merges every skinned mesh; a character merges the meshes whose
+    // name starts with its `mesh` prefix (the packer names them `<mesh>_<Part>`).
+    const mine = c.mesh ? skinned.filter((m) => m.name === c.mesh || m.name.startsWith(`${c.mesh}_`)) : skinned
+    if (!mine.length) throw new Error(`crew: no skinned mesh named "${c.mesh}" for character "${c.id}"`)
+    geometries.set(c.id, mergeBody(mine, dropMeshes, textured))
+  }
 
-  return { geometry, bones, boneIndex, ...bake }
+  const texture = textured ? findCrewTexture(skinned) : null
+  const props = new Map()
+  for (const mesh of statics) props.set(mesh.name, bakeStatic(mesh))
+
+  const bake = bakeClips(root, skeleton, skinned[0], gltf.animations)
+
+  return { geometry: geometries.values().next().value, geometries, texture, props, bones, boneIndex, ...bake }
+}
+
+/** The atlas the packer embedded: the first skinned mesh's map, filtered like a kit atlas. */
+function findCrewTexture(skinned) {
+  const t = skinned.find((m) => m.material?.map)?.material.map ?? null
+  if (!t) throw new Error('crew: characters declared but crew.glb carries no texture')
+  t.colorSpace = THREE.SRGBColorSpace
+  t.magFilter = THREE.LinearFilter
+  t.minFilter = THREE.LinearMipmapLinearFilter
+  t.generateMipmaps = true
+  t.anisotropy = 4
+  return t
+}
+
+/** A static (unskinned) node baked into its own local frame, with position, normal and uv. */
+function bakeStatic(mesh) {
+  const geo = new THREE.BufferGeometry()
+  const src = mesh.geometry
+  const count = src.attributes.position.count
+  for (const [name, size] of [
+    ['position', 3],
+    ['normal', 3],
+    ['uv', 2],
+  ]) {
+    const a = src.getAttribute(name)
+    const data = new Float32Array(count * size)
+    if (a) for (let i = 0; i < count; i++) for (let k = 0; k < size; k++) data[i * size + k] = a.getComponent(i, k)
+    geo.setAttribute(name, new THREE.BufferAttribute(data, size))
+  }
+  if (src.index) geo.setIndex(Array.from(src.index.array))
+  // Into the node's own frame, not the scene's: the packer parks props under a `props`
+  // group at the origin, so this is the node transform alone.
+  geo.applyMatrix4(mesh.matrix)
+  geo.computeBoundingBox()
+  return geo
 }
 
 /**
- * Merge the mannequin's six parts into one geometry.
+ * Merge one body's parts into one geometry — the mannequin's six, or one villager's.
  *
- * They already share a skin, so the joint indices line up and no remapping is needed. The
- * UVs go: the pack's texture is a name badge and a smiley, and the colony paints its crew
- * from its own suit palette instead.
+ * They already share a skin, so the joint indices line up and no remapping is needed. An
+ * untextured crew drops its UVs on the way through: the pack's texture is a name badge and
+ * a smiley, and the colony paints its crew from its own suit palette instead.
  */
-function mergeBody(skinned, dropMeshes) {
+function mergeBody(skinned, dropMeshes, textured = false) {
   const drop = new Set(dropMeshes)
   const parts = []
 
@@ -228,12 +243,16 @@ function mergeBody(skinned, dropMeshes) {
     const src = mesh.geometry
     const count = src.attributes.position.count
 
-    for (const [name, size] of [
+    const attrs = [
       ['position', 3],
       ['normal', 3],
       ['skinIndex', 4],
       ['skinWeight', 4],
-    ]) {
+    ]
+    // Only a textured crew carries UVs through the merge — the space mannequin's texture is
+    // a name badge and a smiley, and the colony paints its crew from its own suit palette.
+    if (textured) attrs.push(['uv', 2])
+    for (const [name, size] of attrs) {
       const a = src.getAttribute(name)
       if (!a) throw new Error(`crew: ${mesh.name} has no ${name}`)
       const data = new Float32Array(count * size)
@@ -258,23 +277,24 @@ function mergeBody(skinned, dropMeshes) {
  * What is stored is the matrix the shader can use directly — three's bind matrices folded
  * in — so the vertex stage is a plain weighted sum with nothing left to reconstruct.
  */
-function bakeClips(root, skeleton, mesh, animations, tweaks = TWEAKS) {
+function bakeClips(root, skeleton, mesh, animations) {
   const boneCount = skeleton.bones.length
   const byName = new Map(animations.map((a) => [a.name, a]))
+
   // The clip each key actually bakes: the source, cut down and tweaked as its spec says.
   const clipFor = new Map()
 
   // Lay the clips out end to end in one table and remember where each one starts.
   const clips = {}
   let frameCount = 0
-  for (const [key, spec] of Object.entries(CLIP)) {
+  for (const [key, spec] of Object.entries(SPEC.clips)) {
     let clip = byName.get(spec.name)
     if (!clip) {
       console.warn(`crew: crew.glb has no clip "${spec.name}" — run \`npm run assets\``)
       continue
     }
     if (spec.frames) clip = THREE.AnimationUtils.subclip(clip, `${spec.name}:${key}`, spec.frames[0], spec.frames[1], BAKE_FPS)
-    if (spec.tweak && tweaks[spec.tweak]) clip = tweakClip(clip, tweaks[spec.tweak], spec.tweak)
+    if (spec.tweak && SPEC.tweaks?.[spec.tweak]) clip = tweakClip(clip, SPEC.tweaks[spec.tweak], spec.tweak)
     clipFor.set(key, clip)
     // A looping clip needs its wrap-around frame; a one-shot ends where it ends.
     const frames = Math.max(2, Math.round(clip.duration * BAKE_FPS) + 1)
@@ -358,7 +378,7 @@ function bakeClips(root, skeleton, mesh, animations, tweaks = TWEAKS) {
   return {
     boneTexture: texture,
     attach,
-    attachSlot: new Map(ATTACH.map((name, i) => [name, i])),
+    attachSlot: new Map(ROLES.map((role, i) => [role, i])),
     boneCount,
     frameCount,
     clips,
@@ -404,9 +424,11 @@ export function frameFor(clip, time) {
  * it had normals would skin against an uninitialised matrix and the crew would cast the
  * shadow of a folded-up bind pose.
  */
-export function decorateSkinned(material, uniforms, { normals = true } = {}) {
+export function decorateSkinned(material, uniforms, { normals = true, textured = false } = {}) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
+    // The world curve's uniforms (a theme with `curve` bends the crew with the ground; see
+    // `core/curve.js`). Unused anywhere the curve is not installed.
     withCurve(shader)
 
     shader.vertexShader = shader.vertexShader
@@ -451,6 +473,22 @@ export function decorateSkinned(material, uniforms, { normals = true } = {}) {
 
          mat4 botSkin;`
       )
+
+    if (textured) {
+      // Which column of the crew atlas this instance wears. The packer remaps every
+      // character into column 0, so a colourway is the same body a column to the right.
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          'attribute float aFrame;',
+          `attribute float aFrame;
+         attribute float aColourway;`
+        )
+        .replace(
+          '#include <uv_vertex>',
+          `#include <uv_vertex>
+         vMapUv.x += aColourway;`
+        )
+    }
 
     if (normals) {
       // Three runs the normal stage first, so the matrix is built there and the position

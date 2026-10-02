@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { animateFace as face } from '../src/agents/face-animation.js'
-import { FACE, FACE_LOOPS, FRAME_COLS, FRAME_ROWS, walkingFaceAt } from '../src/agents/faces.js'
+import { FACE, FACE_LOOPS, FRAME_COLS, FRAME_ROWS, walkingFaceAt } from '../src/themes/space/faces.js'
 
 const walker = (values = {}) => ({
   state: 'walking', status: 'idle', stateAge: 3, groundSpeed: 2,

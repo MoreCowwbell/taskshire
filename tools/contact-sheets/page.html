@@ -1,0 +1,102 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"/three/build/three.module.js","three/addons/":"/three/examples/jsm/"}}</script>
+</head><body style="margin:0;background:#222">
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const T = 256; // render size per thumbnail
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setSize(T, T);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;
+const loader = new GLTFLoader();
+const anims = {};
+
+function scene0() {
+  const s = new THREE.Scene();
+  s.add(new THREE.HemisphereLight(0xffffff, 0x8a7f70, 1.6));
+  const d = new THREE.DirectionalLight(0xffffff, 2.0); d.position.set(3, 6, 4); s.add(d);
+  const f = new THREE.DirectionalLight(0xffffff, 0.5); f.position.set(-4, 2, -2); s.add(f);
+  return s;
+}
+
+async function animClip(url, pattern) {
+  if (!anims[url]) anims[url] = (await loader.loadAsync(url)).animations;
+  return anims[url].find(c => pattern.test(c.name)) || null;
+}
+
+async function thumb(item) {
+  const g = await loader.loadAsync(item.url);
+  const root = g.scene;
+  if (item.anim) {
+    const clip = await animClip(item.anim, /^Idle(_A)?$/i) || await animClip(item.anim, /idle/i);
+    if (clip) { const m = new THREE.AnimationMixer(root); m.clipAction(clip).play(); m.setTime(0.4); }
+  }
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3(); // visible meshes only: rigs carry hidden accessory meshes
+  root.traverseVisible(o => { if (o.isMesh) box.union(new THREE.Box3().setFromObject(o, true)); });
+  if (box.isEmpty()) box.setFromObject(root, true);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  const s = scene0(); s.add(root);
+  const cam = new THREE.PerspectiveCamera(28, 1, 0.01, 1000);
+  const dir = new THREE.Vector3(item.front ? 0.45 : 1, item.front ? 0.35 : 0.8, 1).normalize();
+  let dist = sphere.radius / Math.sin(THREE.MathUtils.degToRad(28 / 2));
+  const target = sphere.center.clone();
+  const corners = [];
+  for (const X of [box.min.x, box.max.x]) for (const Y of [box.min.y, box.max.y]) for (const Z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(X, Y, Z));
+  for (let k = 0; k < 4; k++) { // shrink-wrap the camera onto the projected bounding box
+    cam.position.copy(target).addScaledVector(dir, dist); cam.lookAt(target); cam.updateMatrixWorld();
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const c of corners) { const p = c.clone().project(cam); x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+    const mid = new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, target.clone().project(cam).z).unproject(cam);
+    target.copy(mid);
+    dist *= Math.max(x1 - x0, y1 - y0) / 2 / 0.88;
+  }
+  cam.position.copy(target).addScaledVector(dir, dist); cam.lookAt(target);
+  renderer.setClearColor(0x000000, 0);
+  renderer.render(s, cam);
+  const c = document.createElement('canvas'); c.width = c.height = T;
+  c.getContext('2d').drawImage(renderer.domElement, 0, 0);
+  const size = box.getSize(new THREE.Vector3());
+  s.traverse(o => { o.geometry?.dispose?.(); });
+  return { canvas: c, size };
+}
+
+// sheet: { title, subtitle, cell, cols, sections: [{ title, items: [{url,label,anim?,front?}] }] }
+window.buildSheet = async (sheet) => {
+  const cell = sheet.cell, cols = sheet.cols, pad = 14, labelH = 34, headH = 44, titleH = 96;
+  const W = cols * (cell + pad) + pad;
+  let H = titleH;
+  for (const sec of sheet.sections) H += headH + Math.ceil(sec.items.length / cols) * (cell + labelH + pad) + pad;
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  const x = out.getContext('2d');
+  x.fillStyle = '#ece6da'; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#2b2620'; x.font = 'bold 34px Segoe UI, sans-serif'; x.fillText(sheet.title, pad + 4, 46);
+  x.fillStyle = '#6b6258'; x.font = '17px Segoe UI, sans-serif'; x.fillText(sheet.subtitle, pad + 4, 76);
+  let y = titleH; const failed = [];
+  for (const sec of sheet.sections) {
+    x.fillStyle = '#3d362e'; x.fillRect(pad, y + 8, W - 2 * pad, 30);
+    x.fillStyle = '#f4efe6'; x.font = 'bold 18px Segoe UI, sans-serif';
+    x.fillText(`${sec.title}  (${sec.items.length})`, pad + 10, y + 30);
+    y += headH;
+    for (let i = 0; i < sec.items.length; i++) {
+      const it = sec.items[i];
+      const cx = pad + (i % cols) * (cell + pad), cy = y + Math.floor(i / cols) * (cell + labelH + pad);
+      x.fillStyle = '#f8f5ef'; x.fillRect(cx, cy, cell, cell + labelH);
+      x.strokeStyle = '#d3cabb'; x.strokeRect(cx + 0.5, cy + 0.5, cell - 1, cell + labelH - 1);
+      try {
+        const r = await thumb(it);
+        x.drawImage(r.canvas, cx, cy, cell, cell);
+      } catch (e) { failed.push(it.label + ': ' + e.message); x.fillStyle = '#c33'; x.fillText('load failed', cx + 10, cy + 30); }
+      x.fillStyle = '#2b2620'; let fs = 14; x.font = `${fs}px Segoe UI, sans-serif`;
+      while (x.measureText(it.label).width > cell - 8 && fs > 9) x.font = `${--fs}px Segoe UI, sans-serif`;
+      x.fillText(it.label, cx + (cell - x.measureText(it.label).width) / 2, cy + cell + 22);
+    }
+    y += Math.ceil(sec.items.length / cols) * (cell + labelH + pad) + pad;
+  }
+  return { png: out.toDataURL('image/png'), failed, w: W, h: H };
+};
+window.ready = true;
+</script></body></html>

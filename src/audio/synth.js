@@ -10,6 +10,7 @@
  * assignment: every level goes through `setTargetAtTime` or a ramp, because a stepped gain is
  * a click, and one click is enough to get the whole layer muted for good.
  */
+import { featureRng } from '../core/rng.js'
 
 /** Noise loops are this long. Long enough that the ear never catches the repeat. */
 const NOISE_SECONDS = 5
@@ -17,7 +18,10 @@ const NOISE_SECONDS = 5
 const NOISE_CROSSFADE = 0.5
 
 const TAU = Math.PI * 2
-const rand = (lo, hi) => lo + Math.random() * (hi - lo)
+/** Every draw sound makes is the sound stream's: it runs off audio callbacks and timers, where
+ * the page's own `Math.random` would be spent at moments nothing else controls. */
+const random = featureRng('sound')
+const rand = (lo, hi) => lo + random() * (hi - lo)
 
 /**
  * One buffer each of white, pink and brown noise, built once per context. Generated a
@@ -37,7 +41,7 @@ export function createNoiseBuffers(ctx) {
   const brown = new Float32Array(total)
   let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, walk = 0
   for (let i = 0; i < total; i++) {
-    const w = Math.random() * 2 - 1
+    const w = random() * 2 - 1
     white[i] = w
     // Paul Kellet's pink filter: cheap, and flat enough for wind.
     b0 = 0.99886 * b0 + w * 0.0555179
@@ -148,7 +152,7 @@ export class SampleVoice extends Voice {
       src.loopStart = start
       src.loopEnd = end
       // A random offset so two copies of the same loop do not phase against each other.
-      src.start(now, start + Math.random() * Math.max(0, end - start - 0.1))
+      src.start(now, start + random() * Math.max(0, end - start - 0.1))
     } else {
       src.start(now, start, Math.max(0.01, end - start))
       this.until = now + (end - start)
@@ -166,7 +170,7 @@ function looped(ctx, buffer, dest) {
   s.loop = true
   s.connect(dest)
   // Random phase, for the same reason as the sample loop above.
-  s.start(ctx.currentTime, Math.random() * buffer.duration * 0.9)
+  s.start(ctx.currentTime, random() * buffer.duration * 0.9)
   return s
 }
 
@@ -175,7 +179,7 @@ function burst(ctx, buffer, dest, when, duration) {
   const s = ctx.createBufferSource()
   s.buffer = buffer
   s.connect(dest)
-  const offset = Math.random() * Math.max(0, buffer.duration - duration - 0.05)
+  const offset = random() * Math.max(0, buffer.duration - duration - 0.05)
   s.start(when, offset, duration)
   return s
 }
@@ -214,6 +218,30 @@ function envelope(param, now, peak, attack, decay, hold = 0) {
   param.linearRampToValueAtTime(peak, now + attack)
   param.setTargetAtTime(0, now + attack + hold, decay / 4)
   return now + attack + hold + decay
+}
+
+/**
+ * `envelope`, closed. Its decay only approaches 0, so a source stopped just after `end` stops
+ * on about 2% of its peak, and that step is a faint tick at the end of every note. From `end` a
+ * straight line takes it to exactly 0 by `end + 0.04`, before the source's stop at `end + 0.05`.
+ * The curve's value at `end` (four time constants in: e⁻⁴ of the peak) is pinned first, because
+ * a ramp straight after `setTargetAtTime` does not start where the curve has got to — it
+ * replaces the curve. The pin is the curve's own value there, so it is not a step.
+ */
+function closedEnvelope(param, now, peak, attack, decay, hold = 0) {
+  const end = envelope(param, now, peak, attack, decay, hold)
+  param.setValueAtTime(peak * Math.exp(-4), end)
+  param.linearRampToValueAtTime(0, end + 0.04)
+  return end
+}
+
+/** A few milliseconds of highpassed noise: a finger on a string, a clapper on bronze. */
+function tick(ctx, dest, when, noise, freq, level, dur) {
+  const hp = filter(ctx, 'highpass', freq, 0.8)
+  const g = gain(ctx, 0, dest)
+  hp.connect(g)
+  burst(ctx, noise.white, hp, when, dur + 0.01)
+  envelope(g.gain, when, level, 0.001, dur)
 }
 
 /**
@@ -273,7 +301,7 @@ class WindVoice extends Voice {
 
   update(dt, now) {
     // Cutoff and loudness move together: a gust is both louder and brighter.
-    this.velocity += (Math.random() - 0.5) * 3 * this.rate * dt
+    this.velocity += (random() - 0.5) * 3 * this.rate * dt
     this.velocity *= 1 - 0.8 * dt
     this.level += this.velocity * dt
     if (this.level < 0) {
@@ -300,7 +328,7 @@ class SurfVoice extends Voice {
     this.periodLo = o.period[0]
     this.periodHi = o.period[1]
     this.period = rand(this.periodLo, this.periodHi)
-    this.phase = Math.random()
+    this.phase = random()
     this.acc = 0
     const f = this.node(filter(ctx, o.type || 'bandpass', o.center, o.q ?? 0.5))
     f.connect(this.out)
@@ -342,7 +370,7 @@ class FlutterVoice extends Voice {
     this.acc += dt
     if (this.acc < 1 / this.speed) return
     this.acc = 0
-    this.out.gain.setTargetAtTime(this.base * (1 - this.depth + this.depth * Math.random()), now, 0.5 / this.speed)
+    this.out.gain.setTargetAtTime(this.base * (1 - this.depth + this.depth * random()), now, 0.5 / this.speed)
   }
 }
 
@@ -398,7 +426,7 @@ class InsectVoice extends Voice {
     }
     if (this.acc < 0.12) return
     this.acc = 0
-    this.center += (Math.random() - 0.5) * 900
+    this.center += (random() - 0.5) * 900
     this.center = Math.min(5500, Math.max(2400, this.center))
     this.filter.frequency.setTargetAtTime(this.center, now, 0.3)
     this.out.gain.setTargetAtTime(this.base * rand(0.55, 1), now, 0.3)
@@ -428,7 +456,7 @@ class BirdBedVoice extends Voice {
     this.timer -= dt
     if (this.timer > 0) return
     this.timer = rand(this.every[0], this.every[1])
-    const kind = this.kinds[(Math.random() * this.kinds.length) | 0]
+    const kind = this.kinds[(random() * this.kinds.length) | 0]
     BIRDS[kind](this.ctx, this.callGain, now, this.base)
   }
 }
@@ -495,7 +523,7 @@ class HumVoice extends Voice {
   constructor(ctx, dest, noise, o) {
     super(ctx, dest)
     this.base = o.base
-    this.phase = Math.random() * TAU
+    this.phase = random() * TAU
     const now = ctx.currentTime
     const a = this.node(gain(ctx, 1, this.out))
     const b = this.node(gain(ctx, 0.25, this.out))
@@ -590,7 +618,7 @@ class ShipHumVoice extends Voice {
     this.acc += dt
     if (this.acc < 0.2) return
     this.acc = 0
-    this.cutoff += (Math.random() - 0.5) * 30
+    this.cutoff += (random() - 0.5) * 30
     this.cutoff = Math.min(230, Math.max(130, this.cutoff))
     this.filter.frequency.setTargetAtTime(this.cutoff, now, 0.6)
   }
@@ -645,13 +673,71 @@ class ShoreVoice extends Voice {
   }
 }
 
+/**
+ * A moored hull: water lapping at it, and every few seconds a slow groan from the timber. The
+ * groan is stick–slip friction — a sawtooth at a few tens of hertz is a train of tiny slips,
+ * and two resonant bandpasses are the planks they shake. Let go from `update`, like the
+ * shore's laps, so while it waits the loop is a timer and the lap's three nodes.
+ */
+class CreakVoice extends Voice {
+  constructor(ctx, dest, noise, o) {
+    super(ctx, dest)
+    this.base = o.base
+    this.lap = o.lap
+    this.every = o.every
+    const f = this.node(filter(ctx, 'bandpass', 300, 0.7))
+    this.lapGain = this.node(gain(ctx, o.lap * 0.3, this.out))
+    f.connect(this.lapGain)
+    this.source(looped(ctx, noise.brown, f))
+    this.timer = rand(0.3, 1.2)
+    this.lapTimer = rand(0.5, 2)
+    this.out.gain.value = 1
+  }
+
+  update(dt, now) {
+    this.timer -= dt
+    if (this.timer <= 0) {
+      this.timer = rand(this.every[0], this.every[1])
+      this._groan(now)
+    }
+    this.lapTimer -= dt
+    if (this.lapTimer > 0) return
+    this.lapTimer = rand(1.5, 4)
+    const g = this.lapGain.gain
+    g.cancelScheduledValues(now)
+    g.setTargetAtTime(this.lap * rand(0.6, 1), now, 0.12)
+    g.setTargetAtTime(this.lap * 0.3, now + 0.35, 0.3)
+  }
+
+  /** One groan: 38 → 62 → 45 Hz over 0.8 s, eased in and held, into 520 and 900 Hz planks. */
+  _groan(t) {
+    const ctx = this.ctx
+    const dur = 0.8
+    const attack = 0.15
+    const g = gain(ctx, 0, this.out)
+    const end = closedEnvelope(g.gain, t, this.base, attack, 0.15, dur - attack)
+    const saw = ctx.createOscillator()
+    saw.type = 'sawtooth'
+    saw.frequency.setValueAtTime(38, t)
+    saw.frequency.exponentialRampToValueAtTime(62, t + dur * 0.45)
+    saw.frequency.exponentialRampToValueAtTime(45, t + dur)
+    for (const [freq, q, level] of [[520, 8, 1], [900, 10, 0.5]]) {
+      const bp = filter(ctx, 'bandpass', freq, q)
+      saw.connect(bp)
+      bp.connect(gain(ctx, level, g))
+    }
+    saw.start(t)
+    saw.stop(end + 0.05)
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // One-shots. Each is a function (ctx, dest, now, level) → end time, wrapped into a Voice.
 
 const BIRDS = {
   gull(ctx, dest, now, level) {
     let t = now
-    const n = 2 + ((Math.random() * 2) | 0)
+    const n = 2 + ((random() * 2) | 0)
     for (let i = 0; i < n; i++) {
       chirp(ctx, dest, t, { f0: rand(1400, 1700), f1: rand(850, 1000), dur: 0.34, gain: level * 0.5, attack: 0.03, decay: 0.12, modF: 28, modD: 70 })
       t += rand(0.4, 0.6)
@@ -660,7 +746,7 @@ const BIRDS = {
   },
   parrot(ctx, dest, now, level) {
     let t = now
-    const n = 1 + ((Math.random() * 2) | 0)
+    const n = 1 + ((random() * 2) | 0)
     for (let i = 0; i < n; i++) {
       chirp(ctx, dest, t, { f0: rand(1000, 1300), fMid: rand(1500, 1900), f1: rand(800, 1000), dur: 0.28, gain: level * 0.45, attack: 0.01, decay: 0.06, modF: 180, modD: 420 })
       t += rand(0.3, 0.5)
@@ -669,7 +755,7 @@ const BIRDS = {
   },
   crow(ctx, dest, now, level) {
     let t = now
-    const n = 2 + ((Math.random() * 2) | 0)
+    const n = 2 + ((random() * 2) | 0)
     for (let i = 0; i < n; i++) {
       chirp(ctx, dest, t, { f0: rand(650, 750), f1: rand(450, 520), dur: 0.26, gain: level * 0.5, attack: 0.02, decay: 0.07, modF: 95, modD: 320 })
       t += rand(0.32, 0.45)
@@ -678,9 +764,9 @@ const BIRDS = {
   },
   songbird(ctx, dest, now, level) {
     let t = now
-    const n = 3 + ((Math.random() * 4) | 0)
+    const n = 3 + ((random() * 4) | 0)
     for (let i = 0; i < n; i++) {
-      const up = Math.random() < 0.5
+      const up = random() < 0.5
       const a = rand(2500, 4200)
       const b = a * (up ? rand(1.2, 1.6) : rand(0.65, 0.85))
       chirp(ctx, dest, t, { f0: a, f1: b, dur: rand(0.06, 0.12), gain: level * 0.35, attack: 0.008, decay: 0.05, modF: 40, modD: 90 })
@@ -762,7 +848,7 @@ const ONE_SHOTS = {
   },
   ember(ctx, dest, now, level, noise) {
     let t = now
-    const n = 1 + ((Math.random() * 3) | 0)
+    const n = 1 + ((random() * 3) | 0)
     for (let i = 0; i < n; i++) {
       const hp = filter(ctx, 'highpass', 2200, 0.8)
       const g = gain(ctx, 0, dest)
@@ -875,6 +961,60 @@ function beepBoop(blips) {
   }
 }
 
+/**
+ * One note on the lute: a triangle string with a sine octave and twelfth, through a lowpass
+ * that closes as the string dies, and a 6 ms tick for the finger.
+ */
+function pluck(ctx, dest, t, f, level, noise) {
+  const lp = filter(ctx, 'lowpass', 3200, 0.9)
+  lp.frequency.setValueAtTime(3200, t)
+  lp.frequency.exponentialRampToValueAtTime(700, t + 0.3)
+  const g = gain(ctx, 0, dest)
+  lp.connect(g)
+  const end = closedEnvelope(g.gain, t, level, 0.004, 0.55)
+  osc(ctx, 'triangle', f, gain(ctx, 0.5, lp), t).stop(end + 0.05)
+  osc(ctx, 'sine', f * 2, gain(ctx, 0.18, lp), t).stop(end + 0.05)
+  osc(ctx, 'sine', f * 3, gain(ctx, 0.08, lp), t).stop(end + 0.05)
+  tick(ctx, dest, t, noise, 2500, level * 0.12, 0.006)
+  return end
+}
+
+/** A villager's "yes?": two lute notes 0.12 s apart, the second a little softer. [Hz, Hz]. */
+function lute([first, second]) {
+  return (ctx, dest, now, level, noise) => {
+    pluck(ctx, dest, now, first, level * 0.9, noise)
+    return pluck(ctx, dest, now + 0.12, second, level * 0.9 * 0.8, noise)
+  }
+}
+
+/**
+ * A small bronze hand bell, [ratio, gain, decay seconds] per partial. Nothing above the fifth,
+ * and the upper ones die first, which is what keeps a bell from grating.
+ */
+const HANDBELL = [[1, 1, 1.8], [2, 0.45, 1.1], [3, 0.25, 0.6], [4.18, 0.1, 0.35], [5.43, 0.05, 0.2]]
+
+/**
+ * The hand bell at `f0`, rung: `strikes` is [seconds after the first, level] per strike, and
+ * `stretch` lengthens every decay. The needs-you bell and the keep bell are this one bell,
+ * pitched and rung differently.
+ */
+function bell(f0, strikes, stretch = 1) {
+  return (ctx, dest, now, level, noise) => {
+    let end = now
+    for (const [at, peak] of strikes) {
+      const t = now + at
+      for (const [ratio, share, decay] of HANDBELL) {
+        const g = gain(ctx, 0, dest)
+        const e = closedEnvelope(g.gain, t, level * peak * share, 0.004, decay * stretch)
+        osc(ctx, 'sine', f0 * ratio, g, t).stop(e + 0.05)
+        end = Math.max(end, e)
+      }
+      tick(ctx, dest, t, noise, 4000, level * peak * 0.06, 0.003)
+    }
+    return end
+  }
+}
+
 function oneShot(fn) {
   return (ctx, dest, o, noise) => {
     const v = new Voice(ctx, dest)
@@ -933,10 +1073,17 @@ export const GENERATORS = {
   'select-5': oneShot(robotPhrase([[980, 980, 0.07], [980, 980, 0.07], [1470, 1240, 0.14]])),
   'select-6': oneShot(robotPhrase([[1200, 900, 0.1], [600, 1000, 0.16]])),
   'chime-attention': oneShot(ONE_SHOTS.chime),
+  'pluck-1': oneShot(lute([293.66, 440])), // D4, A4
+  'pluck-2': oneShot(lute([392, 587.33])), // G4, D5
+  'pluck-3': oneShot(lute([329.63, 440])), // E4, A4
+  'pluck-4': oneShot(lute([440, 659.25])), // A4, E5
+  'hand-bell': oneShot(bell(1046.5, [[0, 0.8], [0.26, 0.56]])), // C6, struck twice
+  'keep-bell': oneShot(bell(523.25, [[0, 0.8]], 1.5)), // C5, once, ringing longer
 
   // Positional loops
   'work-hammer': (ctx, d, o, n) => new HammerVoice(ctx, d, n, { base: 0.5 }),
   'ship-hum': (ctx, d, o, n) => new ShipHumVoice(ctx, d, n, { base: 0.2 }),
   'drone-whine': (ctx, d, o, n) => new DroneVoice(ctx, d, n, { base: 0.22 }),
   'shore-lap': (ctx, d, o, n) => new ShoreVoice(ctx, d, n, { base: 0.4 }),
+  'hull-creak': (ctx, d, o, n) => new CreakVoice(ctx, d, n, { base: 0.35, lap: 0.12, every: [4, 9] }),
 }

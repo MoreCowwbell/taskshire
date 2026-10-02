@@ -137,6 +137,7 @@ async function scanThreads() {
     const projectPath = cwd
     const project = cwd ? path.basename(cwd) : 'unknown'
     const prompt = f.prompt
+    const running = !f.closed && now - entry.mtime < ACTIVE_WINDOW_MS
 
     threads.push({
       id: ID(entry.id),
@@ -153,7 +154,12 @@ async function scanThreads() {
       lastActivityAt: entry.mtime,
       lastFocusedAt: 0,
       unread: false,
-      running: !f.closed && now - entry.mtime < ACTIVE_WINDOW_MS,
+      running,
+      // The colony reads `state`, not `running`: `active` and `idle` are the two that get a
+      // character. A brain folder says nothing about whether the CLI is still open, so — as in
+      // the Codex adapter — an open turn is `active` and everything else `inactive`. There is
+      // no archive flag here either; archiving is the colony's own list.
+      state: running ? 'active' : 'inactive',
       hasError: f.errored,
       starred: false,
       routine: '',
@@ -168,6 +174,10 @@ async function scanThreads() {
   return threads
 }
 
+/**
+ * `--resume` is offered unmarked — no liveness check here — so `present()` runs it only for an
+ * explicit terminal request, never as the fallback for a link nothing on Linux answers.
+ */
 async function openThread(ref) {
   const id = ref?.sessionId
   if (typeof id !== 'string' || !UUID.test(id)) {

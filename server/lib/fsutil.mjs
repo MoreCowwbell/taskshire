@@ -22,18 +22,27 @@ export async function readHead(file, bytes) {
 }
 
 /**
- * The last `bytes` of a file, with a leading partial line dropped. The mirror of `readHead`,
- * for the questions only the end of a transcript answers — whose turn it is right now.
+ * Read the last chunk of a file — the mirror of `readHead`, for the questions only the end
+ * of a transcript can answer.
+ *
+ * The *leading* partial line is the one dropped here: a window that starts mid-record would
+ * otherwise hand `jsonLines` half a record whose remainder happens to parse. A file shorter
+ * than the window comes back whole, first line included.
  */
 export async function readTail(file, bytes) {
   const fh = await fsp.open(file, 'r')
   try {
     const { size } = await fh.stat()
-    const want = Math.min(bytes, size)
-    const buf = Buffer.allocUnsafe(want)
-    const { bytesRead } = await fh.read(buf, 0, want, size - want)
+    const start = Math.max(0, size - bytes)
+    const len = size - start
+    if (len <= 0) return ''
+    const buf = Buffer.allocUnsafe(len)
+    const { bytesRead } = await fh.read(buf, 0, len, start)
     const text = buf.subarray(0, bytesRead).toString('utf8')
-    return want === size ? text : text.slice(text.indexOf('\n') + 1)
+    if (start === 0) return text
+    const nl = text.indexOf('\n')
+    // A window that landed inside one enormous record holds no whole line at all.
+    return nl === -1 ? '' : text.slice(nl + 1)
   } finally {
     await fh.close()
   }
@@ -71,6 +80,43 @@ export async function listDirs(dir) {
   } catch {
     return []
   }
+}
+
+/**
+ * Rooted, not relative. Checked against both path flavours rather than only the running
+ * platform's: this is a guard against a relative path being resolved against the caller's own
+ * cwd, and whatever `stat` the caller does afterwards is what decides whether the folder is
+ * there. It lives here rather than in `api.mjs` because an adapter needs the same answer —
+ * `startsWith('/')` is the version that says no to every Windows path.
+ */
+export const isAbsoluteFolder = (folder) =>
+  typeof folder === 'string' && (path.win32.isAbsolute(folder) || path.posix.isAbsolute(folder))
+
+/**
+ * A Windows path without its extended-length prefix: `\\?\C:\repo` -> `C:\repo`, and
+ * `\\?\UNC\server\share` -> `\\server\share`. Codex records some cwds in that form, and left
+ * on they read as a second checkout of the same repo — which makes the project names collide
+ * and renames the plot to its whole path. Anything else comes back untouched.
+ */
+export function stripLongPathPrefix(p) {
+  const s = String(p || '')
+  if (/^\\\\\?\\UNC\\/i.test(s)) return `\\\\${s.slice(8)}`
+  return s.replace(/^\\\\\?\\(?=[A-Za-z]:)/, '')
+}
+
+/**
+ * Canonical form for *comparison only* — never for anything handed back to the browser.
+ *
+ * Separators folded to this platform's, `.` and `..` resolved, a trailing separator dropped,
+ * and lower-cased on Windows, where `c:\repo` out of a lock file and `C:\repo` out of a
+ * transcript are the same folder. `claude-code.mjs` keeps its own private copy of this for
+ * its own paths; this one is for the callers outside `server/harnesses/`.
+ */
+export function canonicalPath(p) {
+  if (!p) return ''
+  const native = String(p).replace(/[\\/]+/g, path.sep)
+  const normal = path.normalize(native).replace(new RegExp(`\\${path.sep}+$`), '')
+  return process.platform === 'win32' ? normal.toLowerCase() : normal
 }
 
 /** Does this path exist at all? Adapters use it to answer `detect()`. */

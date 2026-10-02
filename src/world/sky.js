@@ -1,5 +1,7 @@
 import * as THREE from 'three'
-import { COLONY_RADIUS, mulberry } from './planet.js'
+import { COLONY_RADIUS, mulberry } from './setting.js'
+import { hasFeature } from '../core/features.js'
+import { featureRng, isolated } from '../core/rng.js'
 
 /**
  * Sky, stars, the sun, the thing hanging in the sky, and all the lighting.
@@ -22,6 +24,49 @@ const SKY_VERT = /* glsl */ `
 `
 
 const SKY_FRAG = /* glsl */ `
+  varying vec3 vDir;
+  uniform vec3 uTop;
+  uniform vec3 uHorizon;
+  uniform vec3 uSunColor;
+  uniform vec3 uSunDir;
+  uniform float uGlow;       // how much atmosphere there is to scatter light
+  uniform float uDisc;       // sun disc brightness, faded out below the horizon
+  uniform float uHaze;
+
+  void main() {
+    vec3 d = normalize( vDir );
+    float h = clamp( d.y * 0.5 + 0.5, 0.0, 1.0 );
+
+    // A hard-ish gradient near the horizon and a slow one overhead reads far more like sky
+    // than a linear ramp does.
+    vec3 col = mix( uHorizon, uTop, pow( h, 0.42 ) );
+
+    float sun = max( dot( d, uSunDir ), 0.0 );
+    // Wide scatter, tight halo, then the disc itself — three terms, one draw call.
+    // These stay modest on purpose: the sky is the largest surface on screen, so anything
+    // above 1.0 here feeds the bloom pass across the whole frame and washes the colony out.
+    col += uSunColor * pow( sun, 6.0 ) * uGlow * 0.14;
+    col += uSunColor * pow( sun, 60.0 ) * uGlow * 0.3;
+    col += uSunColor * smoothstep( 0.9990, 0.9996, sun ) * uDisc;
+
+    // Haze thickens toward the horizon, so a setting with an atmosphere gets a soft rim.
+    col = mix( col, uHorizon, uHaze * pow( 1.0 - h, 6.0 ) );
+
+    gl_FragColor = vec4( col, 1.0 );
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`
+
+/**
+ * The same dome with upstream's cumulus in it (merged 2026-09-24 from d05ac2f): a sheet of
+ * fbm noise overhead, lit on the sun's side, dark against the stars at night. Only a theme
+ * with the `clouds` feature compiles it — `hasFeature('clouds')` picks the program when the
+ * dome is built — so every other theme's sky is the exact program it always was, not the same
+ * picture from a longer shader. A world with no `clouds` of its own writes `uCloudAmount` 0
+ * and takes the early-out.
+ */
+const SKY_FRAG_CLOUDS = /* glsl */ `
   varying vec3 vDir;
   uniform vec3 uTop;
   uniform vec3 uHorizon;
@@ -95,7 +140,7 @@ const SKY_FRAG = /* glsl */ `
       col = mix( col, cloud, cover );
     }
 
-    // Haze thickens toward the horizon, so an atmosphere planet gets a soft rim.
+    // Haze thickens toward the horizon, so a setting with an atmosphere gets a soft rim.
     col = mix( col, uHorizon, uHaze * pow( 1.0 - h, 6.0 ) );
 
     gl_FragColor = vec4( col, 1.0 );
@@ -168,7 +213,7 @@ export class Sky {
   }
 
   /**
-   * Image-based lighting, taken from this planet's own sky.
+   * Image-based lighting, taken from this setting's own sky.
    *
    * Rather than shipping an HDRI, the sky shader *is* the HDRI: a second copy of the dome —
    * sharing the same uniforms, so it is always the sky you are actually standing under — is
@@ -178,6 +223,15 @@ export class Sky {
    *
    * It is regenerated only when the sky has actually moved, and never more than a few times
    * a second, because prefiltering costs a couple of milliseconds.
+   *
+   * The "few times a second" is measured on the simulation clock the frame loop hands
+   * `update`, not on `performance.now()`. It used to be the wall clock, and that made the
+   * first refresh land on whichever frame the page's clock happened to pass 220 ms — the
+   * visual harness pins its clock at boot and reads it at about 110 ms, so a quick boot
+   * refreshed on frame 8 and a slow one on frame 1, and the prefilter's first-time allocations
+   * (three dozen objects, each spending seeded draws) re-seated the whole crew behind it. On
+   * the simulation clock the first refresh is always frame 1 and the cadence is the same
+   * 220 ms in play, which is all the throttle was ever for (2026-09-12).
    */
   _buildEnvironment() {
     if (!this.renderer) return
@@ -189,11 +243,18 @@ export class Sky {
     this.envDome.frustumCulled = false
     this.envScene.add(this.envDome)
     this._envDirty = true
-    this._envAt = 0
+    /** Simulation seconds at the last prefilter; minus infinity so the first is never throttled. */
+    this._envAt = -Infinity
+    /** The last `elapsed` `update` saw, for a forced refresh from a settings change. */
+    this._envNow = 0
     this._envTarget = null
   }
 
-  _refreshEnvironment(force = false) {
+  /**
+   * @param {number} elapsed  simulation seconds, the frame loop's clock
+   * @param {boolean} [force]  refresh even if the sky has not moved or the throttle would hold
+   */
+  _refreshEnvironment(elapsed, force = false) {
     if (!this.pmrem) return
     if (!this.settings.get('ibl')) {
       if (this.scene.environment) {
@@ -203,11 +264,19 @@ export class Sky {
       }
       return
     }
-    const now = performance.now()
-    if (!force && (!this._envDirty || now - this._envAt < 220)) return
+    if (!force && (!this._envDirty || elapsed - this._envAt < 0.22)) return false
     this._envDirty = false
-    this._envAt = now
+    this._envAt = elapsed
+    this._prefilter()
+    return true
+  }
 
+  /**
+   * Render the environment dome into a fresh radiance map. Each call allocates a render target,
+   * and three stamps it with a UUID drawn from `Math.random`: 20 draws, on whatever stream the
+   * caller runs on.
+   */
+  _prefilter() {
     const next = this.pmrem.fromScene(this.envScene, 0, 0.5, 60)
     this._envTarget?.dispose()
     this._envTarget = next
@@ -233,7 +302,7 @@ export class Sky {
     const mat = new THREE.ShaderMaterial({
       uniforms: this.domeUniforms,
       vertexShader: SKY_VERT,
-      fragmentShader: SKY_FRAG,
+      fragmentShader: hasFeature('clouds') ? SKY_FRAG_CLOUDS : SKY_FRAG,
       side: THREE.BackSide,
       depthWrite: false,
       depthTest: false,
@@ -389,19 +458,19 @@ export class Sky {
     this.group.add(this.companion)
   }
 
-  // ── planet + time ───────────────────────────────────────────────────────────────────
+  // ── setting + time ──────────────────────────────────────────────────────────────────
 
-  setPlanet(planet) {
-    this.planet = planet
-    this.dayTop = new THREE.Color(planet.sky.top)
-    this.dayBottom = new THREE.Color(planet.sky.bottom)
-    // Night is the day palette crushed toward the planet's own horizon colour, so each
+  setSetting(setting) {
+    this.setting = setting
+    this.dayTop = new THREE.Color(setting.sky.top)
+    this.dayBottom = new THREE.Color(setting.sky.bottom)
+    // Night is the day palette crushed toward the setting's own horizon colour, so each
     // world keeps its identity after dark instead of all three going the same black.
-    this.nightTop = new THREE.Color(planet.sky.top).multiplyScalar(0.16).lerp(new THREE.Color(0x03040c), 0.7)
-    this.nightBottom = new THREE.Color(planet.horizon).multiplyScalar(0.5)
-    this.duskColor = new THREE.Color(planet.atmosphere > 0.4 ? 0xd4692f : 0x4a3550)
+    this.nightTop = new THREE.Color(setting.sky.top).multiplyScalar(0.16).lerp(new THREE.Color(0x03040c), 0.7)
+    this.nightBottom = new THREE.Color(setting.horizon).multiplyScalar(0.5)
+    this.duskColor = new THREE.Color(setting.atmosphere > 0.4 ? 0xd4692f : 0x4a3550)
 
-    const comp = planet.companion
+    const comp = setting.companion
     this.companionBody.material.color.set(comp.color)
     this.companionBody.material.emissive.set(comp.color)
     this.companionBody.material.emissiveIntensity = 0.35
@@ -413,14 +482,19 @@ export class Sky {
     this.companionHalo.scale.setScalar(2.2)
 
     this._envDirty = true
-    this.domeUniforms.uHaze.value = 0.25 + planet.atmosphere * 0.5
-    const clouds = planet.clouds
+    this.domeUniforms.uHaze.value = 0.25 + setting.atmosphere * 0.5
+    // Upstream's cumulus: a setting that declares `clouds` and a user who has not turned them
+    // off. Only a theme with `clouds` compiles the cloud code at all (see SKY_FRAG_CLOUDS), so
+    // only such a theme reads the world's `clouds`: any other writes 0 even on a world that
+    // names some, rather than a cover no program draws that would still set the drift's
+    // prefilter below running every 2.5 s.
+    const clouds = hasFeature('clouds') ? setting.clouds : undefined
     this.domeUniforms.uCloudAmount.value = clouds && this.settings.get('clouds') !== false ? clouds.amount : 0
     this.domeUniforms.uCloudColor.value.set(clouds?.color ?? 0xffffff)
     this.cloudSpeed = clouds?.speed ?? 1
-    this.scene.fog.color.set(planet.fog.color)
-    this.scene.fog.near = planet.fog.near
-    this.scene.fog.far = planet.fog.far
+    this.scene.fog.color.set(setting.fog.color)
+    this.scene.fog.near = setting.fog.near
+    this.scene.fog.far = setting.fog.far
     this.setTime(this.time ?? 0.32)
   }
 
@@ -442,8 +516,8 @@ export class Sky {
 
   setTime(t) {
     this.time = ((t % 1) + 1) % 1
-    const planet = this.planet
-    if (!planet) return
+    const setting = this.setting
+    if (!setting) return
 
     // Sun on a tilted arc: 0.25 is sunrise, 0.5 noon, 0.75 sunset. The arc runs along the
     // horizon in `travel` and leans out of it toward `apex`, so noon puts the sun at
@@ -467,17 +541,17 @@ export class Sky {
     this.nightFactor = 1 - day
 
     // Sun light: warm and weak at the horizon, full and neutral overhead.
-    const sunColor = this._c1.set(planet.sun.color).lerp(this.duskColor, golden * 0.7 * planet.atmosphere)
+    const sunColor = this._c1.set(setting.sun.color).lerp(this.duskColor, golden * 0.7 * setting.atmosphere)
     this.sun.color.copy(sunColor)
-    this.sun.intensity = THREE.MathUtils.lerp(planet.sun.night, planet.sun.intensity, day)
+    this.sun.intensity = THREE.MathUtils.lerp(setting.sun.night, setting.sun.intensity, day)
     this._placeSun()
 
-    this.hemi.color.set(planet.ambient.sky)
-    this.hemi.groundColor.set(planet.ambient.ground)
+    this.hemi.color.set(setting.ambient.sky)
+    this.hemi.groundColor.set(setting.ambient.ground)
     // The hemisphere light drops right back when IBL is carrying the ambient — running both
     // at full strength double-counts the sky and flattens everything out.
     const hemiScale = this.settings.get('ibl') ? 0.55 : 1
-    this.hemi.intensity = THREE.MathUtils.lerp(planet.ambient.intensity * 0.22, planet.ambient.intensity, day) * hemiScale
+    this.hemi.intensity = THREE.MathUtils.lerp(setting.ambient.intensity * 0.22, setting.ambient.intensity, day) * hemiScale
     // Enough of a bounce that surfaces turned away from the sun read as dark rather than as
     // holes in the image. On an airless world this stands in for regolith bounce.
     this.fill.intensity = THREE.MathUtils.lerp(0.34, 0.26, day)
@@ -485,25 +559,25 @@ export class Sky {
     // Sky gradient.
     const top = this._c1.copy(this.nightTop).lerp(this.dayTop, day)
     const bottom = this._c2.copy(this.nightBottom).lerp(this.dayBottom, day)
-    if (planet.atmosphere > 0) bottom.lerp(this.duskColor, golden * 0.55 * planet.atmosphere * day)
+    if (setting.atmosphere > 0) bottom.lerp(this.duskColor, golden * 0.55 * setting.atmosphere * day)
     this.domeUniforms.uTop.value.copy(top)
     this.domeUniforms.uHorizon.value.copy(bottom)
     this.domeUniforms.uSunColor.value.copy(sunColor)
     this.domeUniforms.uSunDir.value.copy(this.sunDir)
-    this.domeUniforms.uGlow.value = (0.3 + planet.atmosphere * 1.1) * Math.max(0.08, day)
+    this.domeUniforms.uGlow.value = (0.3 + setting.atmosphere * 1.1) * Math.max(0.08, day)
     this.domeUniforms.uDay.value = day
     // The disc fades out as it sets rather than snapping off at the horizon.
     this.domeUniforms.uDisc.value = 2.4 * THREE.MathUtils.smoothstep(this.sunDir.y, -0.06, 0.04)
 
     // Stars fade with the sky, and never appear at all on a thick-atmosphere daytime.
-    this.stars.material.uniforms.uOpacity.value = Math.pow(1 - day, 1.6) * (1 - planet.atmosphere * 0.35)
+    this.stars.material.uniforms.uOpacity.value = Math.pow(1 - day, 1.6) * (1 - setting.atmosphere * 0.35)
     this.stars.visible = this.settings.get('stars') && this.stars.material.uniforms.uOpacity.value > 0.01
 
     this.companionHalo.material.uniforms.uStrength.value = 0.35 + (1 - day) * 0.65
     this.companionBody.material.emissiveIntensity = 0.25 + (1 - day) * 0.55
 
     // Fog follows the horizon, or the whole world looks like it is behind glass at night.
-    this.scene.fog.color.copy(bottom).lerp(this._c1.set(planet.fog.color), 0.55)
+    this.scene.fog.color.copy(bottom).lerp(this._c1.set(setting.fog.color), 0.55)
     this._envDirty = true
   }
 
@@ -520,7 +594,7 @@ export class Sky {
     if (changed.has('stars')) this.setTime(this.time)
     if (changed.has('ibl') || changed.has('iblIntensity')) {
       this.scene.environmentIntensity = this.settings.get('iblIntensity')
-      this._refreshEnvironment(true)
+      this._refreshEnvironment(this._envNow, true)
     }
   }
 
@@ -532,15 +606,26 @@ export class Sky {
     this.companion.lookAt(camera.position)
     this.starUniforms.uTwinkle.value = elapsed
     // Clouds drift, and a drifting sky is a moving environment map — but only slowly, so
-    // the prefilter is refreshed on its own throttle rather than every frame.
+    // the prefilter is refreshed on its own throttle rather than every frame. On the
+    // simulation clock, like the prefilter throttle itself: a wall clock here is exactly the
+    // bug that made one screenshot in three disagree (2026-09-12).
+    let drifted = false
     if (this.domeUniforms.uCloudAmount.value > 0) {
       this.domeUniforms.uCloudTime.value = elapsed * (this.cloudSpeed ?? 1)
       if (elapsed - (this._cloudEnvAt || 0) > 2.5) {
         this._cloudEnvAt = elapsed
-        this._envDirty = true
+        drifted = true
       }
     }
-    this._refreshEnvironment()
+    this._envNow = elapsed
+    const refreshed = this._refreshEnvironment(elapsed)
+    // The drift's own refresh is the clouds feature's work, so it spends the clouds stream: on
+    // the page's stream its 20 draws every 2.5 s moved the crew of every world that has clouds
+    // (the village's, once it had any). It never stands in for a refresh the sky needed anyway
+    // — one that just ran, or one the throttle is holding, already takes the drift in — and it
+    // leaves that throttle alone, so those land on exactly the frames they would without clouds.
+    if (drifted && !refreshed && !this._envDirty && this.pmrem && this.settings.get('ibl'))
+      isolated(featureRng('clouds'), () => this._prefilter())
 
     // Following the clock beats cycling: both drive the same value, and a cycle running on
     // top of it would just fight. Re-read every frame rather than on a timer — it is two

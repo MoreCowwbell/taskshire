@@ -1,5 +1,6 @@
 import { SOUNDS } from './sounds.js'
 import { createNoiseBuffers, SampleVoice } from './synth.js'
+import { featureRng } from '../core/rng.js'
 
 /**
  * The colony's sound, built on the Web Audio API and nothing else.
@@ -53,7 +54,10 @@ const NO_WORLD = Object.freeze({ night: 0, sources: EMPTY, water: null })
 const HALF_PI = Math.PI / 2
 /** What `play(name)` means with no options. Frozen: the event path has its own scratch object it mutates. */
 const PLAY_DEFAULTS = Object.freeze({ gain: 1 })
-const rand = (lo, hi) => lo + Math.random() * (hi - lo)
+/** Every draw sound makes is the sound stream's: it runs off audio callbacks and timers, where
+ * the page's own `Math.random` would be spent at moments nothing else controls. */
+const random = featureRng('sound')
+const rand = (lo, hi) => lo + random() * (hi - lo)
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 export class Ambience {
@@ -694,14 +698,14 @@ export class Ambience {
       const water = ev.where === 'water' ? this._water : null
       const pts = water?.points
       if (pts && pts.length) {
-        const p = pts[(Math.random() * pts.length) | 0]
+        const p = pts[(random() * pts.length) | 0]
         s.x = p.x
         s.y = water.level ?? 0
         s.z = p.z
       } else {
         // On a ring around the listener at the listener's own height: what matters is that
         // it is heard at a believable distance, wherever the camera happens to be.
-        const a = Math.random() * Math.PI * 2
+        const a = random() * Math.PI * 2
         const r = rand(RING[0], RING[1])
         s.x = this._lx + Math.cos(a) * r
         s.y = this._ly

@@ -19,6 +19,21 @@ export const HEX_DIRS = [
 /** The lattice cell the ship owns. Nothing else may be placed there. */
 export const SHIP_CELL = { q: -2, r: 1 }
 
+/**
+ * The ground a drop is judged against, beyond the other zones.
+ *
+ * Upstream has one arrival on one fixed cell. In this fork each setting names its own
+ * ceremony cell (the valley's boat is not on the space ship's), and a setting refuses more
+ * than that cell — sea, slopes, the threshold (`Colony.blockedCells`). So every rule here takes
+ * `{ ship, blocked }`: `ship` the arrival's cell, the stepping stone the colony may wrap round,
+ * and `blocked` the cell keys no zone may stand on. Both default to upstream's single ship, so
+ * a caller that passes nothing gets exactly his rules.
+ */
+const groundOf = (opts = {}) => {
+  const ship = opts.ship || SHIP_CELL
+  return { ship: cellKey(ship.q, ship.r), blocked: opts.blocked || null }
+}
+
 export const ORIGIN = { q: 0, r: 0 }
 
 /**
@@ -51,11 +66,11 @@ export function hexDistance(a, b) {
  * The ship's cell counts as walkable here even though nobody may claim it: a colony that
  * happens to wrap around the ship is not two colonies.
  */
-export function isConnected(out) {
+export function isConnected(out, opts) {
   const cells = new Map()
   for (const [, list] of out) for (const c of list) cells.set(cellKey(c.q, c.r), c)
   if (cells.size < 2) return true
-  const ship = cellKey(SHIP_CELL.q, SHIP_CELL.r)
+  const { ship } = groundOf(opts)
   const passable = new Set([...cells.keys(), ship])
   const [start] = cells.keys()
   const seen = new Set([start])
@@ -91,20 +106,20 @@ export function translateCells(cells, dq, dr) {
  *
  * @param layout Map of name → cells for every zone on the map, the moving one included.
  */
-export function fits(layout, name, dq, dr) {
+export function fits(layout, name, dq, dr, opts) {
   const cells = layout.get(name)
   if (!cells?.length) return false
   const moved = translateCells(cells, dq, dr)
+  const { ship, blocked } = groundOf(opts)
 
   const occupied = new Set()
   for (const [id, list] of layout) {
     if (id === name) continue
     for (const c of list) occupied.add(cellKey(c.q, c.r))
   }
-  const ship = cellKey(SHIP_CELL.q, SHIP_CELL.r)
   for (const c of moved) {
     const k = cellKey(c.q, c.r)
-    if (k === ship || occupied.has(k)) return false
+    if (k === ship || occupied.has(k) || blocked?.has(k)) return false
     if (hexDistance(c, ORIGIN) >= POOL_RINGS) return false
   }
   return true
@@ -117,11 +132,11 @@ export function fits(layout, name, dq, dr) {
  * tests below pin it. The drag no longer asks it: a move that splits the colony is now allowed
  * and the pieces are slid back together — see `planMove`.
  */
-export function moveIsValid(layout, name, dq, dr) {
-  if (!fits(layout, name, dq, dr)) return false
+export function moveIsValid(layout, name, dq, dr, opts) {
+  if (!fits(layout, name, dq, dr, opts)) return false
   const after = new Map(layout)
   after.set(name, translateCells(layout.get(name), dq, dr))
-  return isConnected(after)
+  return isConnected(after, opts)
 }
 
 /**
@@ -130,10 +145,10 @@ export function moveIsValid(layout, name, dq, dr) {
  * Same walk as `isConnected`, but it keeps the pieces instead of counting them. A colony that
  * has not fragmented comes back as one group.
  */
-export function componentsOf(layout) {
+export function componentsOf(layout, opts) {
   const owner = new Map()
   for (const [name, list] of layout) for (const c of list) owner.set(cellKey(c.q, c.r), name)
-  const ship = cellKey(SHIP_CELL.q, SHIP_CELL.r)
+  const { ship } = groundOf(opts)
 
   const groups = []
   const placed = new Set()
@@ -168,13 +183,13 @@ export function componentsOf(layout) {
 }
 
 /** Does this zone share an edge with any other zone, or with the ship it may step across? */
-function touchesOthers(layout, name) {
+function touchesOthers(layout, name, opts) {
   const others = new Set()
   for (const [id, list] of layout) {
     if (id === name) continue
     for (const c of list) others.add(cellKey(c.q, c.r))
   }
-  others.add(cellKey(SHIP_CELL.q, SHIP_CELL.r))
+  others.add(groundOf(opts).ship)
   for (const c of layout.get(name)) {
     for (const [dq, dr] of HEX_DIRS) if (others.has(cellKey(c.q + dq, c.r + dr))) return true
   }
@@ -220,8 +235,8 @@ const OFFSETS = offsetsByDistance(POOL_RINGS * 2)
  *
  * @returns the new layout, or null if a stranded group has nowhere legal to go.
  */
-export function planMove(layout, name, dq, dr) {
-  if (!fits(layout, name, dq, dr)) return null
+export function planMove(layout, name, dq, dr, opts) {
+  if (!fits(layout, name, dq, dr, opts)) return null
 
   const after = new Map(layout)
   after.set(name, translateCells(layout.get(name), dq, dr))
@@ -230,9 +245,9 @@ export function planMove(layout, name, dq, dr) {
   // "legal" — the colony would simply slide over to meet it, and dragging one zone two cells
   // into the sea would rearrange eight others to chase it. Requiring contact keeps the drop
   // local: whatever the move cuts off gets slid back, and nothing else is disturbed.
-  if (layout.size > 1 && !touchesOthers(after, name)) return null
+  if (layout.size > 1 && !touchesOthers(after, name, opts)) return null
 
-  const groups = componentsOf(after)
+  const groups = componentsOf(after, opts)
   if (groups.length < 2) return after
 
   // The zone under the cursor anchors the colony: it stays exactly where it was dropped, and
@@ -247,7 +262,7 @@ export function planMove(layout, name, dq, dr) {
 
   const stranded = groups.filter((g) => g !== anchor).sort((a, b) => b.size - a.size)
 
-  const ship = cellKey(SHIP_CELL.q, SHIP_CELL.r)
+  const { ship, blocked } = groundOf(opts)
   const placed = new Set()
   for (const zone of anchor) for (const c of after.get(zone)) placed.add(cellKey(c.q, c.r))
 
@@ -262,7 +277,7 @@ export function planMove(layout, name, dq, dr) {
         const q = c.q + o.dq
         const r = c.r + o.dr
         const k = cellKey(q, r)
-        if (k === ship || placed.has(k)) return false
+        if (k === ship || placed.has(k) || blocked?.has(k)) return false
         if (hexDistance({ q, r }, ORIGIN) >= POOL_RINGS) return false
         if (touches) continue
         for (const [nq, nr] of HEX_DIRS) {

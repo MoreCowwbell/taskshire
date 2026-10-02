@@ -66,6 +66,15 @@ export function withCurve(shader) {
 let installed = false
 
 /**
+ * Whether the bend is patched in. Only a theme with `curve` installs it (merge of d05ac2f), so
+ * a shader written by hand has to ask before it calls `bcBend`: without the patched `common`
+ * chunk the function does not exist and the program fails to compile. Such a shader keeps
+ * the exact projection it had before the curve for the themes that never install it —
+ * `modelViewMatrix * p` and `viewMatrix * (modelMatrix * p)` differ in the last bit.
+ */
+export const curveInstalled = () => installed
+
+/**
  * Patch three's shader chunks so every material bends. Call once, before anything compiles.
  */
 export function installWorldCurve() {

@@ -16,6 +16,35 @@ export const OVERLAY_LAYER = 1
 import { SHADOW_SIZES } from './settings.js'
 import { createTiltShift } from './tiltshift.js'
 import { OcclusionPass } from './occlusion.js'
+import { resolveFeatures } from './features.js'
+import { featureRng, isolated } from './rng.js'
+
+/**
+ * Whether a frame goes through the composer. Bloom, SMAA and tilt-shift ask for it in any theme;
+ * the colour grade and contact occlusion only where the theme's engine has those passes at all,
+ * so a theme without them draws straight to the canvas exactly as it always has.
+ */
+export function wantsPost(s, f) {
+  if (s.get('bloom') || s.get('antialias') || s.get('tiltShift')) return true
+  return Boolean((f.grade && s.get('colorGrade')) || (f.occlusion && s.get('ambientOcclusion') > 0))
+}
+
+/**
+ * A feature's pass, built on the feature's stream and kept on it: passes allocate lazily too
+ * (the occlusion target on its first frame, targets again on a resize), and those draws are the
+ * feature's, not the global stream the crew is seated from.
+ */
+function onStream(name, build) {
+  const rng = featureRng(name)
+  const pass = isolated(rng, build)
+  for (const key of ['render', 'setSize']) {
+    const own = pass[key]
+    pass[key] = function (...args) {
+      return isolated(rng, () => own.apply(this, args))
+    }
+  }
+  return pass
+}
 
 /** Safari and friends — not Chrome, which also says "Safari" in its user agent. */
 const IS_WEBKIT =
@@ -43,8 +72,16 @@ const IS_WEBKIT =
  *    are where a soft buffer shows up first.
  */
 export class Engine {
-  constructor(settings) {
+  /**
+   * @param {Settings} settings
+   * @param {{ features?: Readonly<Record<string, boolean>> }} [opts]  the theme's resolved
+   *   features (`src/core/features.js`). `occlusion`, `overlay` and `grade` each build one of
+   *   upstream's passes into the post chain, on its own random stream: every allocation spends
+   *   draws, and the global stream is the one the crew is seated from (merge of d05ac2f).
+   */
+  constructor(settings, { features = resolveFeatures() } = {}) {
     this.settings = settings
+    this.features = features
     // Timer replaces the deprecated Clock. Connecting it to the document means a tab that
     // has been in the background reports a zero delta rather than one enormous catch-up
     // frame, so nothing in the colony teleports when you come back to it.
@@ -207,9 +244,11 @@ export class Engine {
     composer.addPass(new RenderPass(this.scene, this.camera))
 
     // Contact shading comes before bloom/defocus and never touches the readable overlays.
-    this.occlusionPass = new OcclusionPass(this.camera)
-    this.occlusionPass.setStrength(this.settings.get('ambientOcclusion'))
-    composer.addPass(this.occlusionPass)
+    if (this.features.occlusion) {
+      this.occlusionPass = onStream('occlusion', () => new OcclusionPass(this.camera))
+      this.occlusionPass.setStrength(this.settings.get('ambientOcclusion'))
+      composer.addPass(this.occlusionPass)
+    }
 
     // A high threshold is what keeps this an accent rather than a haze: only the eyes,
     // lamps, sparks and the sun's disc clear it, so lit surfaces stay crisp.
@@ -235,7 +274,7 @@ export class Engine {
     // Draw readable overlays after both blur passes. Badges don't write depth, so putting
     // them before tilt-shift blurs them using the depth of the house or sky behind them.
     // Keep them in linear HDR here so OutputPass still applies their existing colour treatment.
-    composer.addPass(new OverlayPass(this.scene, this.camera))
+    if (this.features.overlay) composer.addPass(onStream('overlay', () => new OverlayPass(this.scene, this.camera)))
 
     // OutputPass is what applies tone mapping + sRGB once, at the end of the chain.
     composer.addPass(new OutputPass())
@@ -244,10 +283,12 @@ export class Engine {
     // warm cast, lifted shadows and a soft vignette. Doing it after tone mapping is what
     // keeps it a *grade* — the same nudge whatever the exposure — rather than a change to
     // the lighting.
-    this.gradePass = new ShaderPass(GRADE_SHADER)
-    this.gradePass.enabled = this.settings.get('colorGrade')
-    composer.addPass(this.gradePass)
-    this._syncGrade()
+    if (this.features.grade) {
+      this.gradePass = onStream('grade', () => new ShaderPass(GRADE_SHADER))
+      this.gradePass.enabled = this.settings.get('colorGrade')
+      composer.addPass(this.gradePass)
+      this._syncGrade()
+    }
 
     this.smaaPass = new SMAAPass(1, 1)
     composer.addPass(this.smaaPass)
@@ -268,8 +309,7 @@ export class Engine {
   }
 
   _wantsPost() {
-    const s = this.settings
-    return Boolean(s.get('bloom') || s.get('antialias') || s.get('tiltShift') || s.get('colorGrade') || s.get('ambientOcclusion') > 0)
+    return wantsPost(this.settings, this.features)
   }
 
   /** A planet's own colour character — Mars a little warm, Frost a little cool. */
@@ -398,12 +438,14 @@ export class Engine {
   _draw(dt) {
     this._resizeBuffers()
     if (this.composer && this._wantsPost()) {
-      // The scene pass sees everything but the overlay; the overlay pass sees only it.
-      this.camera.layers.set(0)
+      // The scene pass sees everything but the overlay; the overlay pass sees only it. A
+      // theme without the overlay pass leaves the camera's layers alone, so its badges are
+      // drawn with the scene the way they always were.
+      if (this.features.overlay) this.camera.layers.set(0)
       this._syncDepthTexture()
       this.composer.render(dt)
     } else {
-      this.camera.layers.enableAll()
+      if (this.features.overlay) this.camera.layers.enableAll()
       this.renderer.render(this.scene, this.camera)
     }
   }

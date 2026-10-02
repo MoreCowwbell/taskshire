@@ -1,6 +1,6 @@
 import * as THREE from 'three'
-import { curveUniforms, withCurve } from '../core/curve.js'
-import { fbm, mulberry } from './planet.js'
+import { curveInstalled, curveUniforms, withCurve } from '../core/curve.js'
+import { fbm, mulberry } from './setting.js'
 
 /**
  * The floating island — everything that lives *below and around* the rim.
@@ -30,8 +30,13 @@ import { fbm, mulberry } from './planet.js'
  * Every material bends with the world curve: the two built on MeshStandardMaterial go
  * through three's patched `project_vertex` (and call `withCurve` because they install
  * their own `onBeforeCompile`); the two raw ShaderMaterials project by hand, so they carry
- * `curveUniforms` and call `bcBend` on their world position themselves.
+ * `curveUniforms` and call `bcBend` on their world position themselves — where a theme has
+ * installed it. A theme without the `curve` feature has no `bcBend`, so there `unbent` takes
+ * the call out and the point is projected as it is.
  */
+
+/** A hand-written vertex shader, with its `bcBend( p )` calls left as `( p )` when no curve is installed. */
+const unbent = (glsl) => (curveInstalled() ? glsl : glsl.replace(/bcBend\(/g, '('))
 
 /** What a quality tier gets. `rings` is [above the belly, below it]. */
 const QUALITY = {
@@ -709,7 +714,7 @@ export function createSkyIsland({ planet, heightAt, rimRadius = 58, seed = 4321,
   }
   const seaMat = new THREE.ShaderMaterial({
     uniforms: seaUniforms,
-    vertexShader: SEA_VERT,
+    vertexShader: unbent(SEA_VERT),
     fragmentShader: SEA_FRAG,
     transparent: true,
     depthWrite: false,
@@ -742,7 +747,7 @@ export function createSkyIsland({ planet, heightAt, rimRadius = 58, seed = 4321,
   }
   const puffMat = new THREE.ShaderMaterial({
     uniforms: puffUniforms,
-    vertexShader: PUFF_VERT,
+    vertexShader: unbent(PUFF_VERT),
     fragmentShader: PUFF_FRAG,
     transparent: true,
     depthWrite: false,

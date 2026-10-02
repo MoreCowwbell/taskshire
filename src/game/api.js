@@ -3,7 +3,15 @@ import { mergeState } from './merge-state.js'
 async function req(url, options) {
   const res = await fetch(url, options)
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(body.error || `${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    // The whole answer rides on the error, not just its sentence: `/api/open` refuses to resume
+    // a session whose process is still alive with `live: true` beside the message, and the
+    // toast for that is a different one. Dropping the body here left the browser guessing from
+    // the thread's own state, which cannot know about a terminal the scan calls closed.
+    const err = new Error(body.error || `${res.status} ${res.statusText}`)
+    err.body = body
+    throw err
+  }
   return body
 }
 
@@ -99,15 +107,26 @@ export async function saveState(state) {
 
 /**
  * Hand a thread back to whichever harness owns it — the desktop app comes forward on its own,
- * or a terminal opens with its CLI, whichever `via` asks for.
+ * or the editor window with that repo open does, depending on what `prefer` asks for.
  *
  * `ref` is opaque here on purpose: it is whatever that harness's adapter needs to find the
- * thread again, and the browser only ever passes it straight back. Nothing in the UI knows
- * what a Claude Code session id, or a Codex rollout id, actually looks like.
+ * thread again, and the browser only ever passes it straight back. Nothing in the UI knows what
+ * a Claude Code session id, or a Codex rollout id, actually looks like.
  */
-export const openThread = (thread, via) => post('/api/open', { harness: thread.harness, ref: thread.ref, via })
+export const openThread = (thread, prefer) => post('/api/open', { harness: thread.harness, ref: thread.ref, prefer })
 
-/** A brand new thread in a repo, via that harness's own new-session deep link. */
-export const newSession = (folder, harness, via) => post('/api/new-session', { folder, harness, via })
+/**
+ * A brand new thread in a repo: in the editor window that has it open (`prefer: 'ide'`), or via
+ * that harness's own new-session deep link.
+ */
+export const newSession = (folder, harness, prefer) => post('/api/new-session', { folder, harness, prefer })
 
 export const revealFolder = (folder) => post('/api/reveal', { folder })
+
+/**
+ * What a thread was about: the first request and the last agent line, read on selection.
+ *
+ * Per selection rather than on every thread of every poll — the server reads a transcript to
+ * answer this, and it reads the one thread that is being looked at.
+ */
+export const fetchRecap = (thread) => post('/api/recap', { harness: thread.harness, ref: thread.ref })

@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { OVERLAY_LAYER } from '../core/engine.js'
-import { withCurve } from '../core/curve.js'
+import { curveInstalled, withCurve } from '../core/curve.js'
 import {
   mdiHelpCircle,
   mdiAlert,
@@ -24,9 +24,6 @@ import {
 
 const COLS = 4
 const ROWS = 2
-
-/** Where the badge's bottom edge sits: a shade above the crown of the helmet. */
-const HEAD_CLEAR = 1.42
 
 export const BADGE = {
   none: -1,
@@ -68,9 +65,11 @@ const FADE_BY_BADGE = {
 }
 
 export class Indicators {
-  constructor(scene, settings, capacity) {
+  constructor(scene, settings, capacity, headClearance = 1.42, { overlay = false } = {}) {
     this.settings = settings
     this.capacity = capacity
+    /** Where a badge's bottom edge sits: a shade above the crown of the helmet. */
+    this.headClear = headClearance
     // 512 texels per badge, not per atlas — sized against the closest the camera ever gets,
     // which buildBadgeAtlas works through.
     this.texture = buildBadgeAtlas(512)
@@ -89,8 +88,10 @@ export class Indicators {
 
     this.material = this._material()
     this.mesh = new THREE.InstancedMesh(geo, this.material, capacity)
-    // Drawn after bloom and tilt-shift, so the symbol stays readable over any scene depth.
-    this.mesh.layers.set(OVERLAY_LAYER)
+    // Drawn after bloom and tilt-shift, so the symbol stays readable over any scene depth —
+    // where the theme has `overlay`, whose engine has the overlay pass. Anywhere else the badge stays
+    // on the scene's layer and is drawn with it, as it always was (merge of d05ac2f).
+    if (overlay) this.mesh.layers.set(OVERLAY_LAYER)
     this.mesh.count = 0
     this.mesh.frustumCulled = false
     this.mesh.renderOrder = 10
@@ -138,7 +139,7 @@ export class Indicators {
         .replace('#include <uv_vertex>', `#include <uv_vertex>\n vMapUv = uv * uFrameScale + aFrame;`)
         .replace(
           '#include <project_vertex>',
-          `vec4 mvPosition = viewMatrix * vec4( bcBend( ( modelMatrix * vec4( aCenter, 1.0 ) ).xyz ), 1.0 );
+          `${curveInstalled() ? 'vec4 mvPosition = viewMatrix * vec4( bcBend( ( modelMatrix * vec4( aCenter, 1.0 ) ).xyz ), 1.0 );' : 'vec4 mvPosition = modelViewMatrix * vec4( aCenter, 1.0 );'}
            float dist = -mvPosition.z;
            // Mostly-constant screen size: the linear term cancels perspective so a badge
            // stays readable when the camera is pulled right out, while the constant term
@@ -215,8 +216,13 @@ export class Indicators {
 
       centers[n * 3] = agent.pos.x
       // Just clear of the helmet: the shader lifts the quad the rest of the way by its own
-      // half-height, which is the part that has to change with the camera.
-      centers[n * 3 + 1] = agent.pos.y + HEAD_CLEAR + bob
+      // half-height, which is the part that has to change with the camera. The clearance is
+      // measured on a full-grown body, so a smaller one brings it down with itself — the
+      // badge over a half-height helper sits just above its own head, not above the space
+      // where an adult's would have been. The bob is not scaled: it is the badge moving, not
+      // the villager. Nor is the pixel size below — that is HUD, and a helper's badge has to
+      // stay as readable as anyone else's.
+      centers[n * 3 + 1] = agent.pos.y + this.headClear * agent.size + bob
       centers[n * 3 + 2] = agent.pos.z
 
       frames[n * 2] = (badge % COLS) / COLS

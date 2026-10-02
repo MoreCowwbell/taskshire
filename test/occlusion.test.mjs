@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import * as THREE from 'three'
 import { OcclusionPass } from '../src/core/occlusion.js'
 import { Engine } from '../src/core/engine.js'
+import { resolveFeatures } from '../src/core/features.js'
 import { Settings } from '../src/core/settings.js'
 
 function fixture() {
@@ -58,6 +59,7 @@ test('zero releases AO memory, removes all AO draws, and re-enabling uses the cu
 test('AO alone enables postprocessing, strength is bounded, and render failures restore autoClear', () => {
   const engine = Object.create(Engine.prototype)
   engine.settings = { get: key => key === 'ambientOcclusion' ? 0.25 : false }
+  engine.features = resolveFeatures({ occlusion: true }) // see wantsPost in engine.js
   assert.equal(engine._wantsPost(), true)
   const { pass, read, write, renderer } = fixture()
   for (const value of [NaN, Infinity, -1]) { pass.setStrength(value); assert.equal(pass.enabled, false) }
@@ -78,7 +80,7 @@ test('saved lightweight presets stay off, and the AO slider emits only a render 
       let event
       settings.onChange((changed, scope) => { event = { changed, scope } })
       settings.set('ambientOcclusion', 0.35)
-      assert.deepEqual(event.scope, { world: false, render: true })
+      assert.deepEqual(event.scope, { world: false, render: true, roster: false })
       assert.equal(settings.get('preset'), 'custom')
       settings.applyAll({ preset: 'low' })
       assert.equal(settings.get('ambientOcclusion'), 0, 'legacy colony-file settings also keep AO off')
